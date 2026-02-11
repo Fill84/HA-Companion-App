@@ -1,0 +1,50 @@
+{
+    "$schema": "https://raw.githubusercontent.com/nicehash/Tauri/refs/heads/dev/crates/tauri-cli/schema.json",
+    "productName": "Home Assistant Companion",
+    "version": "1.0.0",
+    "identifier": "com.ha-companion.desktop",
+    "build": {
+        "frontendDist": "../src",
+        "devUrl": "http://localhost:1420",
+        "beforeDevCommand": "yarn run dev:server",
+        "beforeBuildCommand": ""
+    },
+    "app": {
+        "withGlobalTauri": true,
+        "windows": [
+            {
+                "title": "Home Assistant Companion",
+                "width": 1280,
+                "height": 800,
+                "visible": false,
+                "resizable": true,
+                "fullscreen": false,
+                "decorations": true
+            }
+        ],
+        "trayIcon": {
+            "iconPath": "icons/icon.ico",
+            "iconAsTemplate": true,
+            "menuOnLeftClick": false,
+            "tooltip": "Home Assistant Companion"
+        },
+        "security": {
+            "csp": null
+        }
+    },
+    "bundle": {
+        "active": true,
+        "targets": "all",
+        "icon": [
+            "icons/icon.ico"
+        ],
+        "windows": {
+            "webviewInstallMode": {
+                "type": "downloadBootstrapper"
+            }
+        }
+    },
+    "plugins": {
+        "autostart": null
+    }
+}

@@ -1,0 +1,91 @@
+use crate::ha_client::{HaClient, RegistrationRequest};
+use crate::sensors::collector::SensorCollector;
+use crate::settings::AppSettings;
+
+/// Perform full device registration with HA
+pub async fn register_device(
+    settings: &mut AppSettings,
+    ha_client: &mut HaClient,
+    collector: &mut SensorCollector,
+    app_handle: &tauri::AppHandle,
+) -> Result<String, String> {
+    // Validate settings
+    if settings.server_url.is_empty() {
+        return Err("Server URL is not configured".to_string());
+    }
+    if settings.access_token.is_empty() {
+        return Err("Access token is not configured".to_string());
+    }
+
+    // Collect device metadata
+    let sys_info = crate::sensors::system_info::collect();
+
+    let registration = RegistrationRequest {
+        device_id: settings.device_id.clone(),
+        device_name: sys_info.hostname.clone(),
+        manufacturer: sys_info.motherboard_manufacturer.clone(),
+        model: sys_info.motherboard_model.clone(),
+        os_name: Some(sys_info.os_name.clone()),
+        os_version: Some(sys_info.os_version.clone()),
+        app_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+    };
+
+    // Register device
+    let response = ha_client
+        .register_device(&registration)
+        .await
+        .map_err(|e| format!("Registration failed: {}", e))?;
+
+    if !response.success {
+        return Err(format!(
+            "Registration rejected: {}",
+            response.error.unwrap_or_else(|| "Unknown error".to_string())
+        ));
+    }
+
+    let webhook_id = response
+        .webhook_id
+        .ok_or("No webhook_id in response")?;
+
+    // Save webhook_id
+    settings.webhook_id = Some(webhook_id.clone());
+    ha_client.set_webhook_id(webhook_id.clone());
+    settings.save(app_handle).map_err(|e| format!("Failed to save settings: {}", e))?;
+
+    // Collect and register all sensors
+    let all_sensors = collector.collect_all();
+
+    ha_client
+        .register_sensors(&all_sensors)
+        .await
+        .map_err(|e| format!("Sensor registration failed: {}", e))?;
+
+    // Send initial sensor states
+    ha_client
+        .update_sensors(&all_sensors)
+        .await
+        .map_err(|e| format!("Initial sensor update failed: {}", e))?;
+
+    log::info!("Device registered successfully with webhook_id: {}", webhook_id);
+
+    Ok(webhook_id)
+}
+
+/// Re-register device (when server URL or token changes)
+#[allow(dead_code)]
+pub async fn re_register(
+    settings: &mut AppSettings,
+    ha_client: &mut HaClient,
+    collector: &mut SensorCollector,
+    app_handle: &tauri::AppHandle,
+) -> Result<String, String> {
+    // Clear existing webhook_id
+    settings.webhook_id = None;
+    settings.save(app_handle).map_err(|e| format!("Failed to save settings: {}", e))?;
+
+    // Update HA client
+    ha_client.update_config(settings.server_url.clone(), settings.access_token.clone());
+
+    // Perform fresh registration
+    register_device(settings, ha_client, collector, app_handle).await
+}

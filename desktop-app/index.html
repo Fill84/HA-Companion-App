@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Assistant Companion</title>
+    <link rel="stylesheet" href="src/styles.css">
+</head>
+
+<body>
+    <!-- Setup Screen (shown when not configured) -->
+    <div id="setup-screen" class="setup-screen hidden">
+        <div class="setup-container">
+            <div class="setup-icon">🏠</div>
+            <h1 class="setup-title" data-i18n="setup_title">Home Assistant Companion</h1>
+            <p class="setup-subtitle" data-i18n="setup_subtitle">Connect your desktop to Home Assistant</p>
+
+            <form id="setup-form" class="setup-form">
+                <div class="form-group">
+                    <label for="setup-server-url" data-i18n="server_url">Server URL</label>
+                    <input type="url" id="setup-server-url" placeholder="http://homeassistant.local:8123" required>
+                </div>
+                <div class="form-group">
+                    <label for="setup-token" data-i18n="access_token">Long-Lived Access Token</label>
+                    <div class="password-input">
+                        <input type="password" id="setup-token" placeholder="eyJ0eXAiOi..." required>
+                        <button type="button" class="toggle-password"
+                            onclick="togglePassword('setup-token')">👁</button>
+                    </div>
+                    <small class="help-text" data-i18n="token_help">Create a token in HA: Profile → Long-Lived Access
+                        Tokens</small>
+                </div>
+                <button type="submit" class="btn btn-primary" data-i18n="connect">Connect</button>
+                <div id="setup-error" class="error-message hidden"></div>
+                <div id="setup-loading" class="loading hidden">
+                    <div class="spinner"></div>
+                    <span data-i18n="registering">Registering device...</span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboard (HA iframe) -->
+    <div id="dashboard-container" class="dashboard-container hidden">
+        <iframe id="ha-dashboard" class="ha-iframe"
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"></iframe>
+    </div>
+
+    <!-- Settings Modal Overlay -->
+    <div id="settings-overlay" class="settings-overlay hidden">
+        <div class="settings-modal">
+            <div class="settings-header">
+                <h2 data-i18n="settings">Settings</h2>
+                <button id="settings-close" class="settings-close">&times;</button>
+            </div>
+            <div class="settings-body">
+                <div class="settings-section">
+                    <h3 data-i18n="connection">Connection</h3>
+                    <div class="form-group">
+                        <label for="settings-server-url" data-i18n="server_url">Server URL</label>
+                        <input type="url" id="settings-server-url" placeholder="http://homeassistant.local:8123">
+                    </div>
+                    <div class="form-group">
+                        <label for="settings-token" data-i18n="access_token">Long-Lived Access Token</label>
+                        <div class="password-input">
+                            <input type="password" id="settings-token">
+                            <button type="button" class="toggle-password"
+                                onclick="togglePassword('settings-token')">👁</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3 data-i18n="general">General</h3>
+                    <div class="form-group">
+                        <label for="settings-interval" data-i18n="update_interval">Update Interval (seconds)</label>
+                        <input type="number" id="settings-interval" min="10" max="3600" value="60">
+                    </div>
+                    <div class="form-group">
+                        <label for="settings-language" data-i18n="language">Language</label>
+                        <select id="settings-language">
+                            <option value="en">English</option>
+                            <option value="nl">Nederlands</option>
+                        </select>
+                    </div>
+                    <div class="form-group form-group-inline">
+                        <label for="settings-autostart" data-i18n="autostart">Start at login</label>
+                        <input type="checkbox" id="settings-autostart">
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3 data-i18n="sensors">Sensors</h3>
+                    <div id="sensor-list" class="sensor-list">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3 data-i18n="device_info">Device Info</h3>
+                    <div class="info-row">
+                        <span data-i18n="device_id">Device ID</span>
+                        <span id="info-device-id" class="info-value">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span data-i18n="webhook_id">Webhook ID</span>
+                        <span id="info-webhook-id" class="info-value">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span data-i18n="status">Status</span>
+                        <span id="info-status" class="info-value">-</span>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-footer">
+                <button id="settings-cancel" class="btn btn-secondary" data-i18n="cancel">Cancel</button>
+                <button id="settings-save" class="btn btn-primary" data-i18n="save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="src/i18n.js"></script>
+    <script src="src/settings.js"></script>
+    <script src="src/main.js"></script>
+</body>
+
+</html>

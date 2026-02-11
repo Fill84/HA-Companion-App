@@ -1,0 +1,19 @@
+{
+    "name": "ha-companion-desktop",
+    "version": "1.0.0",
+    "description": "Home Assistant Desktop Companion App",
+    "private": true,
+    "scripts": {
+        "tauri": "tauri",
+        "tauri:dev": "tauri dev",
+        "tauri:build": "tauri build",
+        "dev:server": "serve . -l 1420"
+    },
+    "devDependencies": {
+        "@tauri-apps/cli": "^2",
+        "serve": "^14.2.2"
+    },
+    "dependencies": {
+        "@tauri-apps/api": "^2"
+    }
+}

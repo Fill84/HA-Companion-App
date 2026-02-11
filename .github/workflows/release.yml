@@ -1,0 +1,155 @@
+name: Cross-platform Release
+
+on:
+  push:
+    branches:
+      - main
+      - integratie
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Get latest release version
+        id: get_version
+        run: |
+          VERSION=$(git tag | sort -V | tail -n1)
+          if [ -z "$VERSION" ]; then
+            echo "version=1.0.0" >> $GITHUB_OUTPUT
+          else
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+  build-windows:
+    runs-on: windows-latest
+    needs: version
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Build desktop app
+        run: |
+          cd desktop-app
+          yarn install
+          yarn tauri:build
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers
+          path: |
+            desktop-app/src-tauri/target/release/bundle/nsis/*.exe
+            desktop-app/src-tauri/target/release/bundle/msi/*.msi
+
+  build-macos:
+    runs-on: macos-latest
+    needs: version
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Build desktop app
+        run: |
+          cd desktop-app
+          yarn install
+          yarn tauri:build
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installers
+          path: |
+            desktop-app/src-tauri/target/release/bundle/dmg/*.dmg
+
+  build-linux:
+    runs-on: ubuntu-latest
+    needs: version
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Build desktop app
+        run: |
+          cd desktop-app
+          yarn install
+          yarn tauri:build
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installers
+          path: |
+            desktop-app/src-tauri/target/release/bundle/deb/*.deb
+            desktop-app/src-tauri/target/release/bundle/rpm/*.rpm
+            desktop-app/src-tauri/target/release/bundle/appimage/*.AppImage
+
+  build-integration:
+    runs-on: ubuntu-latest
+    needs: version
+    if: github.ref == 'refs/heads/integratie'
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build integration zip
+        run: |
+          cd ha-integration
+          zip -r ha-integration.zip custom_components hacs.json README.md
+      - name: Upload Integration Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ha-integration
+          path: ha-integration/ha-integration.zip
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [version, build-windows, build-macos, build-linux, build-integration]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installers
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-installers
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-installers
+      - uses: actions/download-artifact@v4
+        with:
+          name: ha-integration
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.version.outputs.version }}
+          files: |
+            windows-installers/*.exe
+            windows-installers/*.msi
+            macos-installers/*.dmg
+            linux-installers/*.deb
+            linux-installers/*.rpm
+            linux-installers/*.AppImage
+            ha-integration/ha-integration.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
