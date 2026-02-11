@@ -101,6 +101,22 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v3
+      - name: Convert app icon to RGBA (required for Tauri)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install Pillow
+          .venv/bin/python -c "
+          from PIL import Image
+          import os
+          icons_dir = 'desktop-app/src-tauri/icons'
+          for name in os.listdir(icons_dir):
+              if name.endswith('.png'):
+                  path = os.path.join(icons_dir, name)
+                  img = Image.open(path)
+                  if img.mode != 'RGBA':
+                      img = img.convert('RGBA')
+                      img.save(path)
+          "
       - name: Install Tauri Linux dependencies
         run: |
           sudo apt-get update
@@ -141,16 +157,19 @@ jobs:
     needs: version
     if: github.ref == 'refs/heads/integratie'
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout ha-integration repo
+        uses: actions/checkout@v3
+        with:
+          repository: Fill84/ha-integration
+          ref: main
       - name: Build integration zip
         run: |
-          cd ha-integration
           zip -r ha-integration.zip custom_components hacs.json README.md
       - name: Upload Integration Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ha-integration
-          path: ha-integration/ha-integration.zip
+          path: ha-integration.zip
 
   release:
     runs-on: ubuntu-latest
