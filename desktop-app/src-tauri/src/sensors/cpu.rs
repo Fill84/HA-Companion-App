@@ -20,6 +20,7 @@ pub fn collect(sys: &System) -> CpuData {
     let logical_core_count = cpus.len();
 
     // Try to get CPU temperature from sysinfo components first
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut temperature = {
         let components = sysinfo::Components::new_with_refreshed_list();
         let all_labels: Vec<String> = components.iter().map(|c| c.label().to_string()).collect();
