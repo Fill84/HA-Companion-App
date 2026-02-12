@@ -1,5 +1,5 @@
 {
-    "$schema": "https://raw.githubusercontent.com/nicehash/Tauri/refs/heads/dev/crates/tauri-cli/schema.json",
+    "$schema": "https://schema.tauri.app/config/2",
     "productName": "Home Assistant Companion",
     "version": "1.0.0",
     "identifier": "com.ha-companion.desktop",
@@ -39,6 +39,9 @@
         "windows": {
             "webviewInstallMode": {
                 "type": "downloadBootstrapper"
+            },
+            "nsis": {
+                "installMode": "both"
             }
         }
     },

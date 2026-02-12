@@ -12,7 +12,7 @@ jobs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Get next release version
@@ -32,20 +32,49 @@ jobs:
     needs: version
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18'
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+          node-version: '20'
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Update version in tauri.conf.json
+        run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version='${{ needs.version.outputs.version }}';fs.writeFileSync(f,JSON.stringify(c,null,4))"
+
+      - name: Import code signing certificate
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE)) {
+            Write-Host "No certificate provided, skipping code signing setup"
+            exit 0
+          }
+          $certBytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          $certPath = Join-Path $env:RUNNER_TEMP "certificate.pfx"
+          [IO.File]::WriteAllBytes($certPath, $certBytes)
+          $securePassword = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $securePassword
+          echo "CERTIFICATE_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+          Remove-Item $certPath
+
+      - name: Configure code signing in Tauri config
+        if: env.CERTIFICATE_THUMBPRINT != ''
+        shell: pwsh
+        run: |
+          $conf = Get-Content desktop-app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json -Depth 10
+          $conf.bundle.windows.certificateThumbprint = $env:CERTIFICATE_THUMBPRINT
+          $conf.bundle.windows | Add-Member -NotePropertyName "digestAlgorithm" -NotePropertyValue "sha256" -Force
+          $conf.bundle.windows | Add-Member -NotePropertyName "timestampUrl" -NotePropertyValue "http://timestamp.digicert.com" -Force
+          $conf | ConvertTo-Json -Depth 10 | Set-Content desktop-app/src-tauri/tauri.conf.json
+
       - name: Build desktop app
         run: |
           cd desktop-app
           yarn install
           yarn tauri:build
+
       - name: Stage Windows Artifacts
         shell: pwsh
         run: |
@@ -63,7 +92,7 @@ jobs:
     needs: version
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Convert app icon to RGBA (required for macOS)
         run: |
           python3 -m venv .venv
@@ -80,14 +109,14 @@ jobs:
                       img = img.convert('RGBA')
                       img.save(path)
           "
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18'
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+          node-version: '20'
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Update version in tauri.conf.json
+        run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version='${{ needs.version.outputs.version }}';fs.writeFileSync(f,JSON.stringify(c,null,4))"
+
       - name: Build desktop app
         run: |
           cd desktop-app
@@ -108,7 +137,7 @@ jobs:
     needs: version
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Convert app icon to RGBA (required for Tauri)
         run: |
           python3 -m venv .venv
@@ -138,14 +167,14 @@ jobs:
             libssl-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18'
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+          node-version: '20'
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Update version in tauri.conf.json
+        run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version='${{ needs.version.outputs.version }}';fs.writeFileSync(f,JSON.stringify(c,null,4))"
+
       - name: Build desktop app
         run: |
           cd desktop-app
@@ -169,7 +198,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout ha-integration repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: Fill84/ha-integration
           ref: main
@@ -218,3 +247,25 @@ jobs:
             ha-integration/ha-integration.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout repo to update version in tauri.conf.json
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update version in tauri.conf.json to release tag
+        run: |
+          node -e "
+          const fs = require('fs');
+          const f = 'desktop-app/src-tauri/tauri.conf.json';
+          const c = JSON.parse(fs.readFileSync(f, 'utf8'));
+          c.version = '${{ needs.version.outputs.version }}';
+          fs.writeFileSync(f, JSON.stringify(c, null, 4));
+          "
+
+      - name: Commit and push version update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add desktop-app/src-tauri/tauri.conf.json
+          git diff --staged --quiet || (git commit -m "chore: set version to ${{ needs.version.outputs.version }} for release" && git push)
