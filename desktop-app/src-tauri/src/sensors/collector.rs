@@ -57,46 +57,51 @@ impl SensorCollector {
         self.sys.refresh_all();
         let mut sensors = Vec::new();
 
-        // CPU sensors (dynamic)
-        if self.is_enabled("cpu_usage") {
+        // CPU sensors (dynamic) — collect once, reuse
+        let cpu_enabled =
+            self.is_enabled("cpu_usage") || self.is_enabled("cpu_frequency") || self.is_enabled("cpu_temperature");
+        if cpu_enabled {
             let cpu_data = cpu::collect(&self.sys);
-            sensors.push(SensorValue {
-                unique_id: "cpu_usage".into(),
-                name: "CPU Usage".into(),
-                state: serde_json::json!(format!("{:.1}", cpu_data.usage_percent)),
-                sensor_type: "sensor".into(),
-                device_class: None,
-                unit_of_measurement: Some("%".into()),
-                state_class: Some("measurement".into()),
-                icon: Some("mdi:cpu-64-bit".into()),
-                attributes: HashMap::new(),
-                update_at_interval: true,
-            });
-        }
 
-        if self.is_enabled("cpu_frequency") {
-            let cpu_data = cpu::collect(&self.sys);
-            sensors.push(SensorValue {
-                unique_id: "cpu_frequency".into(),
-                name: "CPU Frequency".into(),
-                state: serde_json::json!(cpu_data.frequency_mhz),
-                sensor_type: "sensor".into(),
-                device_class: Some("frequency".into()),
-                unit_of_measurement: Some("MHz".into()),
-                state_class: Some("measurement".into()),
-                icon: Some("mdi:speedometer".into()),
-                attributes: HashMap::new(),
-                update_at_interval: true,
-            });
-        }
+            if self.is_enabled("cpu_usage") {
+                sensors.push(SensorValue {
+                    unique_id: "cpu_usage".into(),
+                    name: "CPU Usage".into(),
+                    state: serde_json::json!(format!("{:.1}", cpu_data.usage_percent)),
+                    sensor_type: "sensor".into(),
+                    device_class: None,
+                    unit_of_measurement: Some("%".into()),
+                    state_class: Some("measurement".into()),
+                    icon: Some("mdi:cpu-64-bit".into()),
+                    attributes: HashMap::new(),
+                    update_at_interval: true,
+                });
+            }
 
-        if self.is_enabled("cpu_temperature") {
-            let cpu_data = cpu::collect(&self.sys);
-            if let Some(temp) = cpu_data.temperature {
+            if self.is_enabled("cpu_frequency") {
+                sensors.push(SensorValue {
+                    unique_id: "cpu_frequency".into(),
+                    name: "CPU Frequency".into(),
+                    state: serde_json::json!(cpu_data.frequency_mhz),
+                    sensor_type: "sensor".into(),
+                    device_class: Some("frequency".into()),
+                    unit_of_measurement: Some("MHz".into()),
+                    state_class: Some("measurement".into()),
+                    icon: Some("mdi:speedometer".into()),
+                    attributes: HashMap::new(),
+                    update_at_interval: true,
+                });
+            }
+
+            if self.is_enabled("cpu_temperature") {
+                let temp_state = match cpu_data.temperature {
+                    Some(temp) => serde_json::json!(format!("{:.1}", temp)),
+                    None => serde_json::json!(null),
+                };
                 sensors.push(SensorValue {
                     unique_id: "cpu_temperature".into(),
                     name: "CPU Temperature".into(),
-                    state: serde_json::json!(format!("{:.1}", temp)),
+                    state: temp_state,
                     sensor_type: "sensor".into(),
                     device_class: Some("temperature".into()),
                     unit_of_measurement: Some("°C".into()),
@@ -108,37 +113,71 @@ impl SensorCollector {
             }
         }
 
-        // Memory sensors (dynamic)
-        if self.is_enabled("memory_usage") {
+        // Memory sensors (dynamic) — collect once, reuse
+        let mem_enabled = self.is_enabled("memory_usage")
+            || self.is_enabled("memory_used")
+            || self.is_enabled("swap_usage");
+        if mem_enabled {
             let mem_data = memory::collect(&self.sys);
-            sensors.push(SensorValue {
-                unique_id: "memory_usage".into(),
-                name: "Memory Usage".into(),
-                state: serde_json::json!(format!("{:.1}", mem_data.usage_percent)),
-                sensor_type: "sensor".into(),
-                device_class: None,
-                unit_of_measurement: Some("%".into()),
-                state_class: Some("measurement".into()),
-                icon: Some("mdi:memory".into()),
-                attributes: HashMap::new(),
-                update_at_interval: true,
-            });
-        }
 
-        if self.is_enabled("memory_used") {
-            let mem_data = memory::collect(&self.sys);
-            sensors.push(SensorValue {
-                unique_id: "memory_used".into(),
-                name: "Memory Used".into(),
-                state: serde_json::json!(format!("{:.2}", mem_data.used_gb)),
-                sensor_type: "sensor".into(),
-                device_class: Some("data_size".into()),
-                unit_of_measurement: Some("GB".into()),
-                state_class: Some("measurement".into()),
-                icon: Some("mdi:memory".into()),
-                attributes: HashMap::new(),
-                update_at_interval: true,
-            });
+            if self.is_enabled("memory_usage") {
+                sensors.push(SensorValue {
+                    unique_id: "memory_usage".into(),
+                    name: "Memory Usage".into(),
+                    state: serde_json::json!(format!("{:.1}", mem_data.usage_percent)),
+                    sensor_type: "sensor".into(),
+                    device_class: None,
+                    unit_of_measurement: Some("%".into()),
+                    state_class: Some("measurement".into()),
+                    icon: Some("mdi:memory".into()),
+                    attributes: HashMap::new(),
+                    update_at_interval: true,
+                });
+            }
+
+            if self.is_enabled("memory_used") {
+                sensors.push(SensorValue {
+                    unique_id: "memory_used".into(),
+                    name: "Memory Used".into(),
+                    state: serde_json::json!(format!("{:.2}", mem_data.used_gb)),
+                    sensor_type: "sensor".into(),
+                    device_class: Some("data_size".into()),
+                    unit_of_measurement: Some("GB".into()),
+                    state_class: Some("measurement".into()),
+                    icon: Some("mdi:memory".into()),
+                    attributes: HashMap::new(),
+                    update_at_interval: true,
+                });
+            }
+
+            // Swap sensors
+            if self.is_enabled("swap_usage") && mem_data.swap_total_bytes > 0 {
+                let swap_usage_pct = if mem_data.swap_total_bytes > 0 {
+                    (mem_data.swap_used_bytes as f32 / mem_data.swap_total_bytes as f32) * 100.0
+                } else {
+                    0.0
+                };
+                let swap_used_gb = mem_data.swap_used_bytes as f64 / 1_073_741_824.0;
+                let swap_total_gb = mem_data.swap_total_bytes as f64 / 1_073_741_824.0;
+
+                sensors.push(SensorValue {
+                    unique_id: "swap_usage".into(),
+                    name: "Swap Usage".into(),
+                    state: serde_json::json!(format!("{:.1}", swap_usage_pct)),
+                    sensor_type: "sensor".into(),
+                    device_class: None,
+                    unit_of_measurement: Some("%".into()),
+                    state_class: Some("measurement".into()),
+                    icon: Some("mdi:swap-horizontal".into()),
+                    attributes: {
+                        let mut attrs = HashMap::new();
+                        attrs.insert("swap_used_gb".into(), serde_json::json!(format!("{:.2}", swap_used_gb)));
+                        attrs.insert("swap_total_gb".into(), serde_json::json!(format!("{:.1}", swap_total_gb)));
+                        attrs
+                    },
+                    update_at_interval: true,
+                });
+            }
         }
 
         // Disk sensors (dynamic)
@@ -332,6 +371,50 @@ impl SensorCollector {
             }
         }
 
+        // System uptime & process count (dynamic)
+        if self.is_enabled("system_uptime") || self.is_enabled("process_count") {
+            let dyn_info = system_info::collect_dynamic();
+
+            if self.is_enabled("system_uptime") {
+                let hours = dyn_info.uptime_seconds / 3600;
+                let minutes = (dyn_info.uptime_seconds % 3600) / 60;
+                sensors.push(SensorValue {
+                    unique_id: "system_uptime".into(),
+                    name: "System Uptime".into(),
+                    state: serde_json::json!(format!("{}h {}m", hours, minutes)),
+                    sensor_type: "sensor".into(),
+                    device_class: Some("duration".into()),
+                    unit_of_measurement: Some("s".into()),
+                    state_class: Some("total_increasing".into()),
+                    icon: Some("mdi:clock-outline".into()),
+                    attributes: {
+                        let mut attrs = HashMap::new();
+                        attrs.insert("uptime_seconds".into(), serde_json::json!(dyn_info.uptime_seconds));
+                        attrs.insert("days".into(), serde_json::json!(dyn_info.uptime_seconds / 86400));
+                        attrs.insert("hours".into(), serde_json::json!(hours));
+                        attrs.insert("minutes".into(), serde_json::json!(minutes));
+                        attrs
+                    },
+                    update_at_interval: true,
+                });
+            }
+
+            if self.is_enabled("process_count") {
+                sensors.push(SensorValue {
+                    unique_id: "process_count".into(),
+                    name: "Process Count".into(),
+                    state: serde_json::json!(dyn_info.process_count),
+                    sensor_type: "sensor".into(),
+                    device_class: None,
+                    unit_of_measurement: Some("processes".into()),
+                    state_class: Some("measurement".into()),
+                    icon: Some("mdi:format-list-numbered".into()),
+                    attributes: HashMap::new(),
+                    update_at_interval: true,
+                });
+            }
+        }
+
         sensors
     }
 
@@ -427,8 +510,17 @@ impl SensorCollector {
             }
         }
 
+        // BIOS sensors (static)
         if self.is_enabled("bios_version") {
             if let Some(ref bios) = sys_info.bios_version {
+                let mut attrs = HashMap::new();
+                if let Some(ref vendor) = sys_info.bios_vendor {
+                    attrs.insert("vendor".into(), serde_json::json!(vendor));
+                }
+                if let Some(ref date) = sys_info.bios_release_date {
+                    attrs.insert("release_date".into(), serde_json::json!(date));
+                }
+
                 sensors.push(SensorValue {
                     unique_id: "bios_version".into(),
                     name: "BIOS Version".into(),
@@ -438,7 +530,113 @@ impl SensorCollector {
                     unit_of_measurement: None,
                     state_class: None,
                     icon: Some("mdi:chip".into()),
+                    attributes: attrs,
+                    update_at_interval: false,
+                });
+            }
+        }
+
+        if self.is_enabled("bios_vendor") {
+            if let Some(ref vendor) = sys_info.bios_vendor {
+                sensors.push(SensorValue {
+                    unique_id: "bios_vendor".into(),
+                    name: "BIOS Vendor".into(),
+                    state: serde_json::json!(vendor),
+                    sensor_type: "sensor".into(),
+                    device_class: None,
+                    unit_of_measurement: None,
+                    state_class: None,
+                    icon: Some("mdi:chip".into()),
                     attributes: HashMap::new(),
+                    update_at_interval: false,
+                });
+            }
+        }
+
+        if self.is_enabled("bios_date") {
+            if let Some(ref date) = sys_info.bios_release_date {
+                sensors.push(SensorValue {
+                    unique_id: "bios_date".into(),
+                    name: "BIOS Date".into(),
+                    state: serde_json::json!(date),
+                    sensor_type: "sensor".into(),
+                    device_class: None,
+                    unit_of_measurement: None,
+                    state_class: None,
+                    icon: Some("mdi:calendar".into()),
+                    attributes: HashMap::new(),
+                    update_at_interval: false,
+                });
+            }
+        }
+
+        // Last boot time (static)
+        if self.is_enabled("last_boot") {
+            let boot_time = sys_info.boot_time;
+            // Format as ISO-like string
+            let datetime = chrono_from_timestamp(boot_time);
+            sensors.push(SensorValue {
+                unique_id: "last_boot".into(),
+                name: "Last Boot".into(),
+                state: serde_json::json!(datetime),
+                sensor_type: "sensor".into(),
+                device_class: Some("timestamp".into()),
+                unit_of_measurement: None,
+                state_class: None,
+                icon: Some("mdi:restart".into()),
+                attributes: {
+                    let mut attrs = HashMap::new();
+                    attrs.insert("boot_timestamp".into(), serde_json::json!(boot_time));
+                    attrs
+                },
+                update_at_interval: false,
+            });
+        }
+
+        // Logged-in user (static)
+        if self.is_enabled("logged_in_user") {
+            if let Some(ref user) = sys_info.logged_in_user {
+                sensors.push(SensorValue {
+                    unique_id: "logged_in_user".into(),
+                    name: "Logged In User".into(),
+                    state: serde_json::json!(user),
+                    sensor_type: "sensor".into(),
+                    device_class: None,
+                    unit_of_measurement: None,
+                    state_class: None,
+                    icon: Some("mdi:account".into()),
+                    attributes: HashMap::new(),
+                    update_at_interval: false,
+                });
+            }
+        }
+
+        // Display info (static)
+        if self.is_enabled("display") {
+            for (i, display) in sys_info.displays.iter().enumerate() {
+                let suffix = if sys_info.displays.len() > 1 {
+                    format!("_{}", i + 1)
+                } else {
+                    String::new()
+                };
+
+                sensors.push(SensorValue {
+                    unique_id: format!("display_resolution{}", suffix),
+                    name: format!("Display Resolution{}", if suffix.is_empty() { "".to_string() } else { format!(" {}", i + 1) }),
+                    state: serde_json::json!(display.resolution),
+                    sensor_type: "sensor".into(),
+                    device_class: None,
+                    unit_of_measurement: None,
+                    state_class: None,
+                    icon: Some("mdi:monitor".into()),
+                    attributes: {
+                        let mut attrs = HashMap::new();
+                        attrs.insert("adapter".into(), serde_json::json!(display.name));
+                        if let Some(hz) = display.refresh_rate_hz {
+                            attrs.insert("refresh_rate_hz".into(), serde_json::json!(hz));
+                        }
+                        attrs
+                    },
                     update_at_interval: false,
                 });
             }
@@ -509,6 +707,7 @@ impl SensorCollector {
             ("memory_usage", "Memory Usage", true),
             ("memory_used", "Memory Used", true),
             ("memory_total", "Memory Total", false),
+            ("swap_usage", "Swap Usage", true),
             ("disk_usage", "Disk Usage", true),
             ("gpu", "GPU Sensors", true),
             ("network", "Network Sensors", true),
@@ -517,6 +716,13 @@ impl SensorCollector {
             ("hostname", "Hostname", false),
             ("motherboard", "Motherboard", false),
             ("bios_version", "BIOS Version", false),
+            ("bios_vendor", "BIOS Vendor", false),
+            ("bios_date", "BIOS Date", false),
+            ("system_uptime", "System Uptime", true),
+            ("process_count", "Process Count", true),
+            ("last_boot", "Last Boot Time", false),
+            ("logged_in_user", "Logged In User", false),
+            ("display", "Display Resolution", false),
         ];
 
         all_sensors
@@ -534,6 +740,58 @@ impl SensorCollector {
     pub fn set_enabled_sensors(&mut self, enabled: HashMap<String, bool>) {
         self.enabled_sensors = enabled;
     }
+}
+
+/// Convert a UNIX timestamp to an ISO 8601 string for HA timestamp device_class
+fn chrono_from_timestamp(timestamp: u64) -> String {
+    use std::time::{Duration, UNIX_EPOCH};
+    let dt = UNIX_EPOCH + Duration::from_secs(timestamp);
+    // Format as ISO 8601 (HA expects this for timestamp device_class)
+    let secs = timestamp;
+    let days_since_epoch = secs / 86400;
+    let time_of_day = secs % 86400;
+    let hours = time_of_day / 3600;
+    let minutes = (time_of_day % 3600) / 60;
+    let seconds = time_of_day % 60;
+
+    // Simple date calculation from days since epoch
+    let mut y = 1970i64;
+    let mut remaining_days = days_since_epoch as i64;
+
+    loop {
+        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
+        if remaining_days < days_in_year {
+            break;
+        }
+        remaining_days -= days_in_year;
+        y += 1;
+    }
+
+    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let month_days = [
+        31,
+        if leap { 29 } else { 28 },
+        31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+    ];
+    let mut m = 0usize;
+    for (i, &d) in month_days.iter().enumerate() {
+        if remaining_days < d as i64 {
+            m = i;
+            break;
+        }
+        remaining_days -= d as i64;
+    }
+
+    let _ = dt; // suppress unused warning
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}+00:00",
+        y,
+        m + 1,
+        remaining_days + 1,
+        hours,
+        minutes,
+        seconds
+    )
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

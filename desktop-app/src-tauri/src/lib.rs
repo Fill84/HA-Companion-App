@@ -37,7 +37,7 @@ pub fn run(dev_mode: bool) {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // Focus main window when second instance is launched
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
@@ -94,7 +94,7 @@ pub fn run(dev_mode: bool) {
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "show_hide" => {
-                        if let Some(window) = app.get_webview_window("main") {
+                        if let Some(window) = app.get_window("main") {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
                             } else {
@@ -107,11 +107,12 @@ pub fn run(dev_mode: bool) {
                         // Close the HA overlay so the main HTML is visible
                         crate::commands::close_dashboard_view(app);
                         // Show window + emit event so JS opens the settings modal
-                        if let Some(window) = app.get_webview_window("main") {
+                        if let Some(window) = app.get_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
-                            let _ = window.emit("tray-show-settings", ());
                         }
+                        // Emit on the app handle (works for all webviews)
+                        let _ = app.emit("tray-show-settings", ());
                     }
                     "quit" => {
                         app.exit(0);
@@ -121,7 +122,7 @@ pub fn run(dev_mode: bool) {
                 .on_tray_icon_event(|tray, event| {
                     if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
+                        if let Some(window) = app.get_window("main") {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
                             } else {
@@ -146,7 +147,7 @@ pub fn run(dev_mode: bool) {
 
             // Show the main window — the JS initApp() will decide what to show.
             // If already registered it will call load_dashboard to add the HA child webview.
-            if let Some(w) = app.get_webview_window("main") {
+            if let Some(w) = app.get_window("main") {
                 let _ = w.show();
             }
 
@@ -177,7 +178,9 @@ pub fn run(dev_mode: bool) {
                 // Hide main window instead of closing (keep in tray)
                 if label == "main" {
                     api.prevent_close();
-                    if let Some(window) = app_handle.get_webview_window("main") {
+                    // Use get_window (not get_webview_window) because with the
+                    // unstable multi-webview feature, Window and Webview are separate.
+                    if let Some(window) = app_handle.get_window("main") {
                         let _ = window.hide();
                     }
                 }
@@ -192,6 +195,8 @@ async fn sensor_update_loop(state: Arc<AppState>, _handle: tauri::AppHandle) {
     // Wait a bit for app to initialize
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
+    let mut cycle_count: u64 = 0;
+
     loop {
         let interval_secs = {
             let settings = state.settings.lock().await;
@@ -201,23 +206,48 @@ async fn sensor_update_loop(state: Arc<AppState>, _handle: tauri::AppHandle) {
         let is_registered = *state.is_registered.lock().await;
 
         if is_registered {
-            // Collect sensor data
-            let sensor_data = {
-                let mut collector = state.collector.lock().await;
-                collector.collect_dynamic()
-            };
+            // Every 10 cycles (or on first cycle), re-register all sensors
+            // and send a full update (including static sensors).
+            // This ensures entities exist in HA even after HA restarts.
+            if cycle_count % 10 == 0 {
+                let all_sensors = {
+                    let mut collector = state.collector.lock().await;
+                    collector.collect_all()
+                };
+                let ha_client = state.ha_client.lock().await;
+                if let Err(e) = ha_client.register_sensors(&all_sensors).await {
+                    log::error!("Failed to re-register sensors: {}", e);
+                    if e.to_string().contains("410") {
+                        log::warn!("Webhook expired, need to re-register");
+                        *state.is_registered.lock().await = false;
+                    }
+                } else {
+                    log::debug!("Re-registered {} sensors with HA", all_sensors.len());
+                    // Also send state update for ALL sensors (including static)
+                    if let Err(e) = ha_client.update_sensors(&all_sensors).await {
+                        log::error!("Failed to update all sensors: {}", e);
+                    }
+                }
+            } else {
+                // Normal cycle: only update dynamic sensors
+                let sensor_data = {
+                    let mut collector = state.collector.lock().await;
+                    collector.collect_dynamic()
+                };
 
-            // Send to HA
-            let ha_client = state.ha_client.lock().await;
-            if let Err(e) = ha_client.update_sensors(&sensor_data).await {
-                log::error!("Failed to update sensors: {}", e);
+                let ha_client = state.ha_client.lock().await;
+                if let Err(e) = ha_client.update_sensors(&sensor_data).await {
+                    log::error!("Failed to update sensors: {}", e);
 
-                // If 410 Gone, we need to re-register
-                if e.to_string().contains("410") {
-                    log::warn!("Webhook expired, need to re-register");
-                    *state.is_registered.lock().await = false;
+                    // If 410 Gone, we need to re-register
+                    if e.to_string().contains("410") {
+                        log::warn!("Webhook expired, need to re-register");
+                        *state.is_registered.lock().await = false;
+                    }
                 }
             }
+
+            cycle_count += 1;
         }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;

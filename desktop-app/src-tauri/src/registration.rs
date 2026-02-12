@@ -67,6 +67,12 @@ pub async fn register_device(
         return Err(format!("Failed to save settings: {}", e));
     }
 
+    // Wait for HA to finish setting up the config entry and sensor platforms.
+    // The webhook handler and dispatcher listeners need time to initialize
+    // before we can register sensors via the webhook.
+    log::info!("[HA] Waiting 3s for HA platform setup to complete...");
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
     // Collect and register all sensors
     let all_sensors = collector.collect_all();
 

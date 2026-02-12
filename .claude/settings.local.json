@@ -3,7 +3,9 @@
     "allow": [
       "Bash(cargo build:*)",
       "Bash(npx tauri dev:*)",
-      "Bash(set:*)"
+      "Bash(set:*)",
+      "Bash(yarn tauri:dev:*)",
+      "Bash(cargo check:*)"
     ]
   }
 }

@@ -191,15 +191,19 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: windows-installers
+          path: windows-installers
       - uses: actions/download-artifact@v4
         with:
           name: macos-installers
+          path: macos-installers
       - uses: actions/download-artifact@v4
         with:
           name: linux-installers
+          path: linux-installers
       - uses: actions/download-artifact@v4
         with:
           name: ha-integration
+          path: ha-integration
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
