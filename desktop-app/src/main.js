@@ -1,58 +1,13 @@
 /**
  * Main frontend logic for Home Assistant Companion
- * Handles app initialization, dashboard loading, tray events, and auto-login
+ * Handles app initialization, setup form, tray events
  */
-
-/**
- * Load the HA dashboard in the iframe with auto-login
- */
-function loadDashboard(serverUrl, token) {
-    const iframe = document.getElementById("ha-dashboard");
-    const container = document.getElementById("dashboard-container");
-
-    if (!serverUrl || !token) {
-        container.classList.add("hidden");
-        return;
-    }
-
-    // Clean up the URL
-    const baseUrl = serverUrl.replace(/\/+$/, "");
-
-    // Strategy: Load a blank page first, inject hassTokens into localStorage,
-    // then navigate to the HA dashboard
-    iframe.src = "about:blank";
-
-    iframe.onload = function onFirstLoad() {
-        iframe.onload = null; // Remove this handler
-
-        try {
-            // Inject hassTokens into the iframe's localStorage
-            const hassTokens = {
-                hassUrl: baseUrl,
-                access_token: token,
-                token_type: "Bearer",
-            };
-
-            iframe.contentWindow.localStorage.setItem(
-                "hassTokens",
-                JSON.stringify(hassTokens)
-            );
-        } catch (e) {
-            console.warn("Could not inject tokens into iframe localStorage:", e);
-        }
-
-        // Now navigate to the actual HA dashboard
-        iframe.src = baseUrl;
-        container.classList.remove("hidden");
-    };
-}
 
 /**
  * Show the setup screen
  */
 function showSetupScreen() {
     document.getElementById("setup-screen").classList.remove("hidden");
-    document.getElementById("dashboard-container").classList.add("hidden");
 }
 
 /**
@@ -89,9 +44,9 @@ async function handleSetup(e) {
         // Register device
         await window.__TAURI__.core.invoke("register_device");
 
-        // Success — load dashboard
+        // Success — open HA dashboard as child webview overlay
         hideSetupScreen();
-        loadDashboard(serverUrl, token);
+        await window.__TAURI__.core.invoke("load_dashboard");
     } catch (err) {
         errorEl.textContent = err.toString();
         errorEl.classList.remove("hidden");
@@ -115,13 +70,14 @@ async function initApp() {
             // No config — show setup wizard
             showSetupScreen();
         } else if (!settings.is_registered) {
-            // Has config but not registered — try to register
+            // Has config but not registered — show setup with pre-filled values
             showSetupScreen();
             document.getElementById("setup-server-url").value = settings.server_url;
             document.getElementById("setup-token").value = settings.access_token;
         } else {
-            // Already configured and registered — load dashboard
-            loadDashboard(settings.server_url, settings.access_token);
+            // Already registered — open HA dashboard as child webview
+            hideSetupScreen();
+            await window.__TAURI__.core.invoke("load_dashboard");
         }
     } catch (err) {
         console.error("Failed to initialize app:", err);

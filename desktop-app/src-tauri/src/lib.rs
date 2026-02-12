@@ -104,10 +104,13 @@ pub fn run(dev_mode: bool) {
                         }
                     }
                     "settings" => {
+                        // Close the HA overlay so the main HTML is visible
+                        crate::commands::close_dashboard_view(app);
+                        // Show window + emit event so JS opens the settings modal
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
-                            let _ = window.emit("tray-show-settings", ()); // Emitter trait is now imported
+                            let _ = window.emit("tray-show-settings", ());
                         }
                     }
                     "quit" => {
@@ -141,6 +144,12 @@ pub fn run(dev_mode: bool) {
                 sensor_update_loop(bg_state, bg_handle).await;
             });
 
+            // Show the main window — the JS initApp() will decide what to show.
+            // If already registered it will call load_dashboard to add the HA child webview.
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -152,6 +161,8 @@ pub fn run(dev_mode: bool) {
             toggle_sensor,
             get_current_language,
             get_my_public_ip,
+            load_dashboard,
+            hide_dashboard,
         ])
         .build(tauri::generate_context!())
         .expect("Error building Tauri application");
@@ -163,7 +174,7 @@ pub fn run(dev_mode: bool) {
                 event: WindowEvent::CloseRequested { api, .. },
                 ..
             } => {
-                // Hide window instead of closing (keep in tray)
+                // Hide main window instead of closing (keep in tray)
                 if label == "main" {
                     api.prevent_close();
                     if let Some(window) = app_handle.get_webview_window("main") {

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::ha_client::normalize_server_url;
 use reqwest::Client;
@@ -176,6 +176,105 @@ pub async fn toggle_sensor(
 pub async fn get_current_language(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let settings = state.settings.lock().await;
     Ok(settings.language.clone())
+}
+
+/// Open the HA dashboard as a child webview inside the main window.
+/// Only injects hassTokens in localStorage (no externalApp, which would
+/// hijack the auth flow and break it for long-lived tokens).
+pub fn open_dashboard_view<R: tauri::Runtime, M: Manager<R>>(
+    manager: &M,
+    server_url: &str,
+    token: &str,
+) -> Result<(), String> {
+    let base_url = server_url.trim_end_matches('/');
+    log::info!("[Dashboard] Opening dashboard view for: {}", base_url);
+
+    // Close existing HA child webview if any
+    if let Some(existing) = manager.get_webview("ha-view") {
+        log::info!("[Dashboard] Closing existing ha-view");
+        let _ = existing.close();
+    }
+
+    let escaped_token = token
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let escaped_url = base_url
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+
+    // Initialization script: set hassTokens in localStorage BEFORE HA frontend loads.
+    // Do NOT set window.externalApp — it hijacks auth and breaks long-lived tokens.
+    let init_script = format!(
+        r#"
+        (function() {{
+            try {{
+                localStorage.setItem("hassTokens", JSON.stringify({{
+                    hassUrl: "{escaped_url}",
+                    access_token: "{escaped_token}",
+                    token_type: "Bearer",
+                    expires_in: 315360000,
+                    refresh_token: "",
+                    expires: Date.now() + 315360000000
+                }}));
+            }} catch(e) {{
+                console.warn("[HA Companion] Failed to inject hassTokens:", e);
+            }}
+        }})();
+        "#
+    );
+
+    let url: url::Url = base_url
+        .parse()
+        .map_err(|e: url::ParseError| format!("Invalid URL '{}': {}", base_url, e))?;
+
+    let window = manager.get_window("main").ok_or("Main window not found")?;
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let phys = window.inner_size().map_err(|e| e.to_string())?;
+    let logical = phys.to_logical::<f64>(scale);
+
+    log::info!("[Dashboard] Adding child webview {}x{}", logical.width, logical.height);
+
+    window
+        .add_child(
+            tauri::webview::WebviewBuilder::new("ha-view", tauri::WebviewUrl::External(url))
+                .initialization_script(&init_script)
+                .auto_resize(),
+            tauri::LogicalPosition::new(0.0, 0.0),
+            logical,
+        )
+        .map_err(|e| format!("Failed to create HA webview: {}", e))?;
+
+    log::info!("[Dashboard] Dashboard view created");
+    Ok(())
+}
+
+/// Remove the HA dashboard child webview (to reveal the main HTML underneath).
+pub fn close_dashboard_view<R: tauri::Runtime, M: Manager<R>>(manager: &M) {
+    if let Some(wv) = manager.get_webview("ha-view") {
+        let _ = wv.close();
+        log::info!("[Dashboard] Closed ha-view");
+    }
+}
+
+/// Tauri command: open (or re-open) the HA dashboard view
+#[tauri::command]
+pub async fn load_dashboard(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let settings = state.settings.lock().await;
+    let server_url = settings.server_url.clone();
+    let token = settings.access_token.clone();
+    drop(settings);
+
+    open_dashboard_view(&app, &server_url, &token)
+}
+
+/// Tauri command: close the HA dashboard view (used when opening settings)
+#[tauri::command]
+pub async fn hide_dashboard(app: tauri::AppHandle) -> Result<(), String> {
+    close_dashboard_view(&app);
+    Ok(())
 }
 
 /// Get this machine's public (outbound) IP. Use this in your reverse proxy allowlist.

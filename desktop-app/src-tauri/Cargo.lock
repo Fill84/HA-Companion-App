@@ -1617,6 +1617,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tokio",
+ "url",
  "uuid",
  "wmi",
 ]

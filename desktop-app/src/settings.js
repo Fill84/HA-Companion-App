@@ -43,10 +43,16 @@ async function openSettings() {
 }
 
 /**
- * Close settings modal
+ * Close settings modal and restore the HA dashboard overlay
  */
-function closeSettings() {
+async function closeSettings() {
     document.getElementById("settings-overlay").classList.add("hidden");
+    // Re-open the HA child webview on top
+    try {
+        await window.__TAURI__.core.invoke("load_dashboard");
+    } catch (err) {
+        console.error("Failed to restore dashboard:", err);
+    }
 }
 
 /**
@@ -71,12 +77,8 @@ async function saveSettings() {
         // Update language
         setLanguage(language);
 
-        // Reload dashboard if URL changed
-        if (currentSettings && serverUrl !== currentSettings.server_url) {
-            loadDashboard(serverUrl, token);
-        }
-
-        closeSettings();
+        // Close settings modal (this also re-opens the HA dashboard view)
+        await closeSettings();
     } catch (err) {
         console.error("Failed to save settings:", err);
         alert("Failed to save settings: " + err);
