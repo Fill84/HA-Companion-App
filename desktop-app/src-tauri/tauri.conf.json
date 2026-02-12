@@ -4,7 +4,7 @@
     "version": "1.0.0",
     "identifier": "com.ha-companion.desktop",
     "build": {
-        "frontendDist": "../src",
+        "frontendDist": "../dist",
         "devUrl": "http://localhost:1420",
         "beforeDevCommand": "yarn run dev:server",
         "beforeBuildCommand": ""
