@@ -4,6 +4,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::ha_client::normalize_server_url;
 use crate::sensors::collector::SensorListItem;
 use crate::AppState;
 
@@ -50,6 +51,9 @@ pub async fn save_settings(
     language: String,
     autostart: bool,
 ) -> Result<(), String> {
+    let server_url = normalize_server_url(&server_url);
+    let access_token = access_token.trim().to_string();
+
     let mut settings = state.settings.lock().await;
     let url_changed = settings.server_url != server_url;
     let token_changed = settings.access_token != access_token;

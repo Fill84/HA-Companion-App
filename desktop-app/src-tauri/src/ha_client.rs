@@ -4,6 +4,15 @@ use std::time::Duration;
 
 use crate::sensors::collector::SensorValue;
 
+/// Normalize server URL: trim whitespace and strip trailing /api so we never build double /api/api/ paths.
+pub fn normalize_server_url(url: &str) -> String {
+    let s = url.trim().trim_end_matches('/');
+    s.strip_suffix("/api")
+        .map(|u| u.trim_end_matches('/'))
+        .unwrap_or(s)
+        .to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegistrationRequest {
     pub device_id: String,
@@ -66,15 +75,20 @@ impl HaClient {
 
         Self {
             client,
-            server_url,
-            access_token,
+            server_url: normalize_server_url(&server_url),
+            access_token: access_token.trim().to_string(),
             webhook_id,
         }
     }
 
     pub fn update_config(&mut self, server_url: String, access_token: String) {
-        self.server_url = server_url;
-        self.access_token = access_token;
+        self.server_url = normalize_server_url(&server_url);
+        self.access_token = access_token.trim().to_string();
+    }
+
+    /// Base URL for API calls (no trailing slash, no trailing /api)
+    fn base_url(&self) -> &str {
+        self.server_url.trim_end_matches('/')
     }
 
     pub fn set_webhook_id(&mut self, webhook_id: String) {
@@ -90,15 +104,12 @@ impl HaClient {
         &self,
         registration: &RegistrationRequest,
     ) -> Result<RegistrationResponse, Box<dyn std::error::Error + Send + Sync>> {
-        let url = format!(
-            "{}/api/desktop_app/registrations",
-            self.server_url.trim_end_matches('/')
-        );
+        let url = format!("{}/api/desktop_app/registrations", self.base_url());
 
         let response = self
             .client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", self.access_token))
+            .header("Authorization", format!("Bearer {}", self.access_token.trim()))
             .header("Content-Type", "application/json")
             .json(registration)
             .send()
@@ -124,11 +135,7 @@ impl HaClient {
             .as_ref()
             .ok_or("No webhook_id configured")?;
 
-        let url = format!(
-            "{}/api/webhook/{}",
-            self.server_url.trim_end_matches('/'),
-            webhook_id
-        );
+        let url = format!("{}/api/webhook/{}", self.base_url(), webhook_id);
 
         let payload = WebhookPayload {
             command_type: "register_sensor".to_string(),
@@ -189,11 +196,7 @@ impl HaClient {
             .as_ref()
             .ok_or("No webhook_id configured")?;
 
-        let url = format!(
-            "{}/api/webhook/{}",
-            self.server_url.trim_end_matches('/'),
-            webhook_id
-        );
+        let url = format!("{}/api/webhook/{}", self.base_url(), webhook_id);
 
         let sensor_updates: Vec<SensorStateUpdate> = sensors
             .iter()
@@ -242,11 +245,7 @@ impl HaClient {
             None => return false,
         };
 
-        let url = format!(
-            "{}/api/webhook/{}",
-            self.server_url.trim_end_matches('/'),
-            webhook_id
-        );
+        let url = format!("{}/api/webhook/{}", self.base_url(), webhook_id);
 
         // Send a minimal payload to check if webhook exists
         let payload = WebhookPayload {
