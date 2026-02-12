@@ -22,12 +22,6 @@
                 "decorations": true
             }
         ],
-        "trayIcon": {
-            "iconPath": "icons/icon.ico",
-            "iconAsTemplate": true,
-            "menuOnLeftClick": false,
-            "tooltip": "Home Assistant Companion"
-        },
         "security": {
             "csp": null
         }

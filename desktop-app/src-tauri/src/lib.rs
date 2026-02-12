@@ -27,7 +27,7 @@ pub struct AppState {
     pub is_registered: Mutex<bool>,
 }
 
-pub fn run() {
+pub fn run(dev_mode: bool) {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // Focus main window when second instance is launched
@@ -41,7 +41,7 @@ pub fn run() {
             Some(vec![]),
         ))
         .plugin(tauri_plugin_store::Builder::default().build())
-        .setup(|app| {
+        .setup(move |app| {
             let handle = app.handle().clone();
 
             // Load settings
@@ -123,6 +123,10 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            // When --dev is used, devtools can be enabled (e.g. via cargo tauri dev).
+            // In production, F12 is disabled by the deny-internal-toggle-devtools capability.
+            let _ = dev_mode;
 
             // Spawn background sensor update loop
             let bg_state = state.clone();

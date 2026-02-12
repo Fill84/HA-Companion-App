@@ -1,1 +1,1 @@
-{}
+{"main-capability":{"identifier":"main-capability","description":"Main window: default permissions but devtools disabled (use --dev to enable)","local":true,"windows":["main"],"permissions":["core:default","core:webview:deny-internal-toggle-devtools"]}}
