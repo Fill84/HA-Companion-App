@@ -206,6 +206,11 @@ body {
     letter-spacing: 0.5px;
 }
 
+.btn-small {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
 .btn:active {
     transform: scale(0.98);
 }

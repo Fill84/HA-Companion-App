@@ -28,6 +28,12 @@ pub struct AppState {
 }
 
 pub fn run(dev_mode: bool) {
+    // In dev/debug builds, init logger so log::info!/error! show in terminal
+    if dev_mode || cfg!(debug_assertions) {
+        let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+            .try_init();
+    }
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // Focus main window when second instance is launched
@@ -145,6 +151,7 @@ pub fn run(dev_mode: bool) {
             update_sensors_now,
             toggle_sensor,
             get_current_language,
+            get_my_public_ip,
         ])
         .build(tauri::generate_context!())
         .expect("Error building Tauri application");

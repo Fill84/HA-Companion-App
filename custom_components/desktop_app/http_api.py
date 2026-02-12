@@ -36,6 +36,18 @@ REGISTRATION_SCHEMA_OPTIONAL = [
 ]
 
 
+class DesktopAppPingView(HomeAssistantView):
+    """Health check endpoint to verify the Desktop App integration is loaded and reachable."""
+
+    url = "/api/desktop_app/ping"
+    name = "api:desktop_app:ping"
+    requires_auth = False
+
+    async def get(self, request: Request) -> Response:
+        """Return 200 so clients can verify the integration is reachable (e.g. before reverse proxy)."""
+        return self.json_message("Desktop App integration is loaded")
+
+
 class DesktopAppRegistrationView(HomeAssistantView):
     """Handle Desktop App device registrations."""
 

@@ -29,6 +29,9 @@ async function openSettings() {
         document.getElementById("info-status").className =
             "info-value " + (currentSettings.is_registered ? "status-ok" : "status-error");
 
+        // Reset "My IP" until user clicks Show
+        document.getElementById("info-my-ip").textContent = "-";
+
         // Populate sensor list
         await populateSensorList();
 
@@ -135,11 +138,30 @@ function togglePassword(inputId) {
     input.type = input.type === "password" ? "text" : "password";
 }
 
+/**
+ * Show this machine's public IP (for proxy allowlist)
+ */
+async function showMyIp() {
+    const el = document.getElementById("info-my-ip");
+    const btn = document.getElementById("settings-show-ip");
+    el.textContent = "...";
+    btn.disabled = true;
+    try {
+        const ip = await window.__TAURI__.core.invoke("get_my_public_ip");
+        el.textContent = ip || "-";
+    } catch (err) {
+        console.error("Failed to get IP:", err);
+        el.textContent = t("error") || "Error";
+    }
+    btn.disabled = false;
+}
+
 // Event listeners
 document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("settings-close").addEventListener("click", closeSettings);
     document.getElementById("settings-cancel").addEventListener("click", closeSettings);
     document.getElementById("settings-save").addEventListener("click", saveSettings);
+    document.getElementById("settings-show-ip").addEventListener("click", showMyIp);
 
     // Close on overlay click
     document.getElementById("settings-overlay").addEventListener("click", (e) => {

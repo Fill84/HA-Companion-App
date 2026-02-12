@@ -11,9 +11,11 @@ pub async fn register_device(
 ) -> Result<String, String> {
     // Validate settings
     if settings.server_url.is_empty() {
+        log::error!("[HA] Registration: server URL is empty");
         return Err("Server URL is not configured".to_string());
     }
     if settings.access_token.is_empty() {
+        log::error!("[HA] Registration: access token is empty");
         return Err("Access token is not configured".to_string());
     }
 
@@ -30,6 +32,13 @@ pub async fn register_device(
         app_version: Some(env!("CARGO_PKG_VERSION").to_string()),
     };
 
+    // Check that the integration is reachable first (clearer 404 message)
+    if let Err(e) = ha_client.check_integration_reachable().await {
+        let msg = format!("Cannot reach Home Assistant Desktop App API. {}", e);
+        log::error!("[HA] {}", msg);
+        return Err(msg);
+    }
+
     // Register device
     let response = ha_client
         .register_device(&registration)
@@ -37,34 +46,40 @@ pub async fn register_device(
         .map_err(|e| format!("Registration failed: {}", e))?;
 
     if !response.success {
-        return Err(format!(
+        let err = format!(
             "Registration rejected: {}",
             response.error.unwrap_or_else(|| "Unknown error".to_string())
-        ));
+        );
+        log::error!("[HA] {}", err);
+        return Err(err);
     }
 
-    let webhook_id = response
-        .webhook_id
-        .ok_or("No webhook_id in response")?;
+    let webhook_id = response.webhook_id.ok_or_else(|| {
+        log::error!("[HA] Registration response missing webhook_id");
+        "No webhook_id in response".to_string()
+    })?;
 
     // Save webhook_id
     settings.webhook_id = Some(webhook_id.clone());
     ha_client.set_webhook_id(webhook_id.clone());
-    settings.save(app_handle).map_err(|e| format!("Failed to save settings: {}", e))?;
+    if let Err(e) = settings.save(app_handle) {
+        log::error!("[HA] Failed to save settings: {}", e);
+        return Err(format!("Failed to save settings: {}", e));
+    }
 
     // Collect and register all sensors
     let all_sensors = collector.collect_all();
 
-    ha_client
-        .register_sensors(&all_sensors)
-        .await
-        .map_err(|e| format!("Sensor registration failed: {}", e))?;
+    if let Err(e) = ha_client.register_sensors(&all_sensors).await {
+        log::error!("[HA] Sensor registration failed: {}", e);
+        return Err(format!("Sensor registration failed: {}", e));
+    }
 
     // Send initial sensor states
-    ha_client
-        .update_sensors(&all_sensors)
-        .await
-        .map_err(|e| format!("Initial sensor update failed: {}", e))?;
+    if let Err(e) = ha_client.update_sensors(&all_sensors).await {
+        log::error!("[HA] Initial sensor update failed: {}", e);
+        return Err(format!("Initial sensor update failed: {}", e));
+    }
 
     log::info!("Device registered successfully with webhook_id: {}", webhook_id);
 

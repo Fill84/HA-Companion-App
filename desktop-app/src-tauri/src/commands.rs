@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::ha_client::normalize_server_url;
+use reqwest::Client;
 use crate::sensors::collector::SensorListItem;
 use crate::AppState;
 
@@ -64,7 +65,10 @@ pub async fn save_settings(
     settings.language = language;
     settings.autostart = autostart;
 
-    settings.save(&app)?;
+    if let Err(e) = settings.save(&app) {
+        log::error!("[HA] Save settings failed: {}", e);
+        return Err(e);
+    }
 
     // If server URL or token changed, re-register
     if url_changed || token_changed {
@@ -75,7 +79,10 @@ pub async fn save_settings(
         if settings.webhook_id.is_some() {
             settings.webhook_id = None;
             *state.is_registered.lock().await = false;
-            settings.save(&app)?;
+            if let Err(e) = settings.save(&app) {
+                log::error!("[HA] Save settings failed: {}", e);
+                return Err(e);
+            }
         }
     }
 
@@ -92,13 +99,20 @@ pub async fn register_device(
     let mut ha_client = state.ha_client.lock().await;
     let mut collector = state.collector.lock().await;
 
-    let webhook_id = crate::registration::register_device(
+    let webhook_id = match crate::registration::register_device(
         &mut settings,
         &mut ha_client,
         &mut collector,
         &app,
     )
-    .await?;
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            log::error!("[HA] Registration failed: {}", e);
+            return Err(e);
+        }
+    };
 
     *state.is_registered.lock().await = true;
 
@@ -117,6 +131,7 @@ pub async fn get_sensor_list(state: State<'_, Arc<AppState>>) -> Result<Vec<Sens
 pub async fn update_sensors_now(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let is_registered = *state.is_registered.lock().await;
     if !is_registered {
+        log::error!("[HA] update_sensors_now: device not registered");
         return Err("Device not registered".to_string());
     }
 
@@ -126,10 +141,10 @@ pub async fn update_sensors_now(state: State<'_, Arc<AppState>>) -> Result<(), S
     };
 
     let ha_client = state.ha_client.lock().await;
-    ha_client
-        .update_sensors(&sensor_data)
-        .await
-        .map_err(|e| format!("Update failed: {}", e))?;
+    if let Err(e) = ha_client.update_sensors(&sensor_data).await {
+        log::error!("[HA] Update sensors failed: {}", e);
+        return Err(format!("Update failed: {}", e));
+    }
 
     Ok(())
 }
@@ -144,7 +159,10 @@ pub async fn toggle_sensor(
 ) -> Result<(), String> {
     let mut settings = state.settings.lock().await;
     settings.enabled_sensors.insert(sensor_id, enabled);
-    settings.save(&app)?;
+    if let Err(e) = settings.save(&app) {
+        log::error!("[HA] Save settings failed: {}", e);
+        return Err(e);
+    }
 
     // Update collector
     let mut collector = state.collector.lock().await;
@@ -158,4 +176,22 @@ pub async fn toggle_sensor(
 pub async fn get_current_language(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let settings = state.settings.lock().await;
     Ok(settings.language.clone())
+}
+
+/// Get this machine's public (outbound) IP. Use this in your reverse proxy allowlist.
+#[tauri::command]
+pub async fn get_my_public_ip() -> Result<String, String> {
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let body = client
+        .get("https://api.ipify.org")
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+    Ok(body.trim().to_string())
 }

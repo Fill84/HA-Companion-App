@@ -91,6 +91,32 @@ impl HaClient {
         self.server_url.trim_end_matches('/')
     }
 
+    /// Check if the Desktop App integration is reachable (GET /api/desktop_app/ping, no auth).
+    /// Returns Ok(()) if reachable, Err with message if 404 or connection failed.
+    pub async fn check_integration_reachable(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!("{}/api/desktop_app/ping", self.base_url());
+        log::info!("[HA] GET {}", url);
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            log::error!("[HA] Ping request failed (connection/network): {}", e);
+            e
+        })?;
+        let status = response.status();
+        log::info!("[HA] ping response: {}", status);
+        if status.as_u16() == 404 {
+            let msg = "404: Desktop App integration not loaded or URL not reachable. \
+                Install the integration in HA, restart HA, and ensure the server URL is correct (base URL without /api). \
+                If using a reverse proxy, ensure /api/ is forwarded to Home Assistant.";
+            log::error!("[HA] Ping failed: {} - URL was: {}", msg, url);
+            return Err(msg.into());
+        }
+        if !response.status().is_success() {
+            let err = format!("Server returned {} for {}", response.status(), url);
+            log::error!("[HA] {}", err);
+            return Err(err.into());
+        }
+        Ok(())
+    }
+
     pub fn set_webhook_id(&mut self, webhook_id: String) {
         self.webhook_id = Some(webhook_id);
     }
@@ -105,6 +131,7 @@ impl HaClient {
         registration: &RegistrationRequest,
     ) -> Result<RegistrationResponse, Box<dyn std::error::Error + Send + Sync>> {
         let url = format!("{}/api/desktop_app/registrations", self.base_url());
+        log::info!("[HA] POST {}", url);
 
         let response = self
             .client
@@ -116,12 +143,34 @@ impl HaClient {
             .await?;
 
         let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        log::info!("[HA] registration response: {} body_len={}", status, body.len());
+        if !body.is_empty() && body.len() <= 500 {
+            log::info!("[HA] registration body: {}", body);
+        }
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
+            if status.as_u16() == 404 {
+                let msg = "404 Not Found: Desktop App integration not loaded or URL not reachable.";
+                log::error!("[HA] Registration {} - URL: {} body: {}", msg, url, body);
+                return Err(
+                    "404 Not Found: Desktop App integration not loaded or URL not reachable. \
+                    Check: (1) Integration installed in HA and HA restarted, (2) Server URL is the HA base URL without /api, (3) Reverse proxy forwards /api/ to HA."
+                        .into(),
+                );
+            }
+            if status.as_u16() == 401 {
+                log::error!("[HA] Registration 401 Unauthorized - URL: {}", url);
+                return Err("401 Unauthorized: Invalid or expired access token.".into());
+            }
+            log::error!("[HA] Registration failed {} - URL: {} body: {}", status, url, body);
             return Err(format!("Registration failed ({}): {}", status, body).into());
         }
 
-        let result: RegistrationResponse = response.json().await?;
+        let result: RegistrationResponse = serde_json::from_str(&body).map_err(|e| {
+            let err = format!("Invalid JSON response: {} body: {}", e, body);
+            log::error!("[HA] {}", err);
+            err
+        })?;
         Ok(result)
     }
 
@@ -161,10 +210,12 @@ impl HaClient {
 
         let status = response.status();
         if status.as_u16() == 410 {
+            log::error!("[HA] Sensor registration 410 Gone - webhook expired");
             return Err("410 Gone - webhook expired".into());
         }
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
+            log::error!("[HA] Sensor registration failed {} - URL: {} body: {}", status, url, body);
             return Err(format!("Sensor registration failed ({}): {}", status, body).into());
         }
 
@@ -225,13 +276,18 @@ impl HaClient {
 
         let status = response.status();
         if status.as_u16() == 410 {
+            log::error!("[HA] Sensor update 410 Gone - webhook expired, URL: {}", url);
             return Err("410 Gone - webhook expired".into());
         }
         if status.as_u16() == 404 {
-            return Err("404 Not Found - integration not installed".into());
+            log::error!("[HA] Sensor update 404 - webhook not found, URL: {}", url);
+            return Err(
+                "404 Not Found: Webhook not found. Device may not be registered yet, or the Desktop App integration was removed/restarted. Try re-registering in the app.".into(),
+            );
         }
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
+            log::error!("[HA] Sensor update failed {} - URL: {} body: {}", status, url, body);
             return Err(format!("Sensor update failed ({}): {}", status, body).into());
         }
 

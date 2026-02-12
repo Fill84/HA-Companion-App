@@ -19,6 +19,7 @@ from .const import (
     ATTR_MODEL,
     ATTR_APP_VERSION,
     ATTR_WEBHOOK_ID,
+    DATA_API_VIEW_REGISTERED,
     DATA_CONFIG_ENTRIES,
     DATA_DEVICES,
     DATA_DELETED_IDS,
@@ -30,7 +31,7 @@ from .const import (
     STORAGE_VERSION,
 )
 from .helpers import get_device_info
-from .http_api import DesktopAppRegistrationView
+from .http_api import DesktopAppPingView, DesktopAppRegistrationView
 from .webhook import handle_webhook
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,10 +41,14 @@ def _register_api_view(hass: HomeAssistant) -> bool:
     """Register the registration API view. Returns True if registered."""
     if getattr(hass, "http", None) is None:
         return False
+    if hass.data.get(DOMAIN, {}).get(DATA_API_VIEW_REGISTERED):
+        return True
     try:
+        hass.http.register_view(DesktopAppPingView())
         hass.http.register_view(DesktopAppRegistrationView())
+        hass.data.setdefault(DOMAIN, {})[DATA_API_VIEW_REGISTERED] = True
         _LOGGER.info(
-            "Registered Desktop App registration endpoint at /api/desktop_app/registrations"
+            "Registered Desktop App API at /api/desktop_app/registrations and /api/desktop_app/ping"
         )
         return True
     except Exception as e:  # noqa: BLE001
@@ -64,6 +69,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         DATA_DELETED_IDS: stored_data.get(DATA_DELETED_IDS, []),
         DATA_PENDING_UPDATES: {},
         DATA_STORE: store,
+        DATA_API_VIEW_REGISTERED: False,
     }
 
     # Register the HTTP registration endpoint so the desktop app can register.

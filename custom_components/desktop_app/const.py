@@ -12,6 +12,7 @@ DATA_DEVICES = "devices"
 DATA_DELETED_IDS = "deleted_ids"
 DATA_PENDING_UPDATES = "pending_updates"
 DATA_STORE = "store"
+DATA_API_VIEW_REGISTERED = "api_view_registered"
 DATA_BINARY_SENSOR = "binary_sensor"
 DATA_SENSOR = "sensor"
 
