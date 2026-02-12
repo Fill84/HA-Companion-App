@@ -5,7 +5,10 @@
       "Bash(npx tauri dev:*)",
       "Bash(set:*)",
       "Bash(yarn tauri:dev:*)",
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "Bash(cargo clean:*)",
+      "Bash(yarn tauri:build:*)",
+      "Bash(git add:*)"
     ]
   }
 }
