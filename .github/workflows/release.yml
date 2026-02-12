@@ -195,12 +195,12 @@ jobs:
         with:
           tag_name: ${{ needs.version.outputs.version }}
           files: |
-            windows-installers/**/*.exe
-            windows-installers/**/*.msi
-            macos-installers/**/*.dmg
-            linux-installers/**/*.deb
-            linux-installers/**/*.rpm
-            linux-installers/**/*.AppImage
-            ha-integration/**/*.zip
+            windows-installers/nsis/*.exe
+            windows-installers/msi/*.msi
+            macos-installers/dmg/*.dmg
+            linux-installers/deb/*.deb
+            linux-installers/rpm/*.rpm
+            linux-installers/appimage/*.AppImage
+            ha-integration/ha-integration.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

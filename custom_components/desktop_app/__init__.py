@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_START, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 
 from .const import (
@@ -35,8 +36,25 @@ from .webhook import handle_webhook
 _LOGGER = logging.getLogger(__name__)
 
 
+def _register_api_view(hass: HomeAssistant) -> bool:
+    """Register the registration API view. Returns True if registered."""
+    if getattr(hass, "http", None) is None:
+        return False
+    try:
+        hass.http.register_view(DesktopAppRegistrationView())
+        _LOGGER.info(
+            "Registered Desktop App registration endpoint at /api/desktop_app/registrations"
+        )
+        return True
+    except Exception as e:  # noqa: BLE001
+        _LOGGER.warning("Failed to register Desktop App API view: %s", e)
+        return False
+
+
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up the Desktop App integration."""
+    _LOGGER.info("Desktop App integration loading (registration API: /api/desktop_app/registrations)")
+
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
     stored_data = await store.async_load() or {}
 
@@ -48,42 +66,38 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         DATA_STORE: store,
     }
 
-    # Register the HTTP registration endpoint (required for app registration).
-    # Try immediately; if hass.http is not ready yet (load order), register on HA start.
-    _view_registered = False
+    # Register the HTTP registration endpoint so the desktop app can register.
+    # Try now; if hass.http is not ready (load order), try on HA start and once after delay.
+    view_registered = _register_api_view(hass)
 
-    if getattr(hass, "http", None) is not None:
-        try:
-            hass.http.register_view(DesktopAppRegistrationView())
-            _view_registered = True
-            _LOGGER.info(
-                "Registered Desktop App registration endpoint at /api/desktop_app/registrations"
-            )
-        except Exception as e:  # noqa: BLE001
-            _LOGGER.warning("Failed to register API view at setup: %s", e)
-
-    if not _view_registered:
+    if not view_registered:
 
         @callback
-        def _register_view(_):
-            nonlocal _view_registered
-            if _view_registered:
+        def _on_start(_):
+            nonlocal view_registered
+            if view_registered:
                 return
-            if getattr(hass, "http", None) is None:
+            view_registered = _register_api_view(hass)
+            if not view_registered and getattr(hass, "http", None) is None:
                 _LOGGER.error(
-                    "Cannot register Desktop App API: hass.http not available"
+                    "Desktop App: hass.http not available at start; registration API will not work"
                 )
-                return
-            try:
-                hass.http.register_view(DesktopAppRegistrationView())
-                _view_registered = True
-                _LOGGER.info(
-                    "Registered Desktop App registration endpoint at /api/desktop_app/registrations"
-                )
-            except Exception as e:  # noqa: BLE001
-                _LOGGER.warning("Failed to register API view on start: %s", e)
 
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, _register_view)
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, _on_start)
+
+        @callback
+        def _delayed_register(_):
+            nonlocal view_registered
+            if view_registered:
+                return
+            view_registered = _register_api_view(hass)
+            if not view_registered:
+                _LOGGER.error(
+                    "Desktop App: registration API could not be registered. "
+                    "Check that the 'http' integration is loaded and restart Home Assistant."
+                )
+
+        async_call_later(hass, 5.0, _delayed_register)
 
     return True
 
