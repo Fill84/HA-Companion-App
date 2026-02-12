@@ -1,0 +1,14 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Desktop App",
+                "description": "Use the Desktop Companion App to register your device. This integration will be configured automatically when a device connects."
+            }
+        },
+        "abort": {
+            "use_companion_app": "Please use the Desktop Companion App to set up this integration.",
+            "already_configured": "This device is already configured."
+        }
+    }
+}

@@ -26,11 +26,11 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
 4. De app registreert automatisch je device en sensors in Home Assistant
 
 ### Home Assistant Integratie (via HACS)
-1. Voeg de integratie branch toe als custom repository in HACS:
+1. Voeg deze repo toe als custom repository in HACS:
    - Repository: `Fill84/HA-Companion-App`
-   - Branch: `integratie`
    - Type: `Integration`
-2. Installeer de integratie via HACS
+   - (De integratie staat in `custom_components/desktop_app` in de repo-root zodat HACS hem vindt.)
+2. Zoek "Desktop App" en installeer de integratie
 3. Herstart Home Assistant
 4. Configureer de integratie via Instellingen → Integraties
 
