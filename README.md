@@ -27,12 +27,14 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
 
 ### Home Assistant Integratie (via HACS)
 1. Voeg deze repo toe als custom repository in HACS:
-   - Repository: `Fill84/HA-Companion-App`
+   - Repository: `https://github.com/Fill84/ha-integration`
    - Type: `Integration`
    - (De integratie staat in `custom_components/desktop_app` in de repo-root zodat HACS hem vindt.)
 2. Zoek "Desktop App" en installeer de integratie
 3. Herstart Home Assistant
 4. Configureer de integratie via Instellingen → Integraties
+
+- voor meer informatie over de integratie bezoek: https://github.com/Fill84/ha-integration
 
 ## Automatische Releases
 - GitHub Actions workflow bouwt en released installers voor alle platforms bij elke push naar main/integratie
