@@ -67,18 +67,71 @@ pub async fn register_device(
         return Err(format!("Failed to save settings: {}", e));
     }
 
-    // Wait for HA to finish setting up the config entry and sensor platforms.
-    // The webhook handler and dispatcher listeners need time to initialize
-    // before we can register sensors via the webhook.
-    log::info!("[HA] Waiting 3s for HA platform setup to complete...");
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-
-    // Collect and register all sensors
+    // After config entry creation, HA still needs to run async_setup_entry
+    // (which registers the webhook handler and starts the sensor platforms)
+    // before our webhook POSTs will work. Instead of a fixed sleep we poll:
+    // first sensor registration is retried with exponential backoff. On a
+    // healthy HA this typically succeeds within 1-2 seconds; on a slow or
+    // heavily loaded HA we keep trying for ~25s before giving up.
     let all_sensors = collector.collect_all();
 
-    if let Err(e) = ha_client.register_sensors(&all_sensors).await {
-        log::error!("[HA] Sensor registration failed: {}", e);
-        return Err(format!("Sensor registration failed: {}", e));
+    let first_sensor = all_sensors.first().cloned().ok_or_else(|| {
+        log::error!("[HA] No sensors collected — cannot complete registration");
+        "No sensors available to register".to_string()
+    })?;
+
+    let mut attempt: u32 = 0;
+    let max_attempts: u32 = 8;
+    let mut delay_ms: u64 = 500;
+    loop {
+        match ha_client.register_sensor(&first_sensor).await {
+            Ok(()) => {
+                log::info!(
+                    "[HA] Initial sensor registered after {} retr{}",
+                    attempt,
+                    if attempt == 1 { "y" } else { "ies" }
+                );
+                break;
+            }
+            Err(e) => {
+                attempt += 1;
+                let err_str = e.to_string();
+                // 410 from HA means webhook is known but config entry missing;
+                // this won't resolve by waiting longer.
+                if err_str.contains("410") {
+                    log::error!(
+                        "[HA] Initial sensor registration returned 410 — config entry missing"
+                    );
+                    return Err(format!("Sensor registration failed: {}", err_str));
+                }
+                if attempt >= max_attempts {
+                    log::error!(
+                        "[HA] Initial sensor registration failed after {} attempts: {}",
+                        attempt,
+                        err_str
+                    );
+                    return Err(format!("Sensor registration failed: {}", err_str));
+                }
+                log::warn!(
+                    "[HA] Initial sensor registration attempt {} failed: {} (retrying in {}ms)",
+                    attempt,
+                    err_str,
+                    delay_ms
+                );
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                // 500ms -> 1s -> 2s -> 4s -> 8s -> 8s -> 8s ...
+                delay_ms = (delay_ms * 2).min(8000);
+            }
+        }
+    }
+
+    // Webhook is alive; register the remaining sensors. Skip the first one
+    // (already registered above).
+    if all_sensors.len() > 1 {
+        if let Err(e) = ha_client.register_sensors(&all_sensors[1..]).await {
+            log::error!("[HA] Remaining sensor registration failed: {}", e);
+            return Err(format!("Sensor registration failed: {}", e));
+        }
     }
 
     // Send initial sensor states
