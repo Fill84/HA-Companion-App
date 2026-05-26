@@ -4,3 +4,4 @@ desktop-app/src-tauri/dist/*
 desktop-app/src-tauri/target/*
 desktop-app/dist/*
 .claude/*
+ha-integration/
