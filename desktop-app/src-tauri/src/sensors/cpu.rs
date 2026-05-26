@@ -44,10 +44,16 @@ pub fn collect(sys: &System) -> CpuData {
         }
     };
 
-    // Fallback: on Windows, try WMI thermal zone if sysinfo returned None
+    // Fallback: on Windows, try WMI thermal zone if sysinfo returned None.
+    // LibreHardwareMonitor / OpenHardwareMonitor are checked first because
+    // they expose accurate per-core CPU sensors and don't need admin on our
+    // side. The standard ACPI thermal zone queries are tried as a last
+    // resort — they often return a static, non-CPU value on consumer mobos.
     #[cfg(windows)]
     if temperature.is_none() {
-        temperature = collect_cpu_temp_wmi();
+        temperature = collect_cpu_temp_lhm()
+            .or_else(collect_cpu_temp_ohm)
+            .or_else(collect_cpu_temp_wmi);
     }
 
     CpuData {
@@ -60,7 +66,102 @@ pub fn collect(sys: &System) -> CpuData {
     }
 }
 
-/// Try to read CPU temperature from WMI.
+/// Try LibreHardwareMonitor's WMI namespace (root\LibreHardwareMonitor).
+/// LHM must be running with its WMI provider enabled in Options → WMI.
+/// Doesn't need admin on our side because LHM does the privileged reads.
+#[cfg(windows)]
+fn collect_cpu_temp_lhm() -> Option<f32> {
+    collect_cpu_temp_hwmon("root\\LibreHardwareMonitor", "LibreHardwareMonitor")
+}
+
+/// Try OpenHardwareMonitor's WMI namespace (root\OpenHardwareMonitor).
+/// Same idea as LHM — works without admin if OHM is running.
+#[cfg(windows)]
+fn collect_cpu_temp_ohm() -> Option<f32> {
+    collect_cpu_temp_hwmon("root\\OpenHardwareMonitor", "OpenHardwareMonitor")
+}
+
+/// Shared query for LHM/OHM. Both expose a `Sensor` class with the same
+/// field names (Identifier, SensorType, Value, Name). We pick the most
+/// representative CPU temperature — prefer Package/Tdie/CCD aggregates,
+/// fall back to averaging core temperatures.
+#[cfg(windows)]
+fn collect_cpu_temp_hwmon(namespace: &str, source_name: &str) -> Option<f32> {
+    use std::collections::HashMap;
+    use wmi::{COMLibrary, Variant, WMIConnection};
+
+    let com_lib = COMLibrary::new().ok()?;
+    let wmi_con = WMIConnection::with_namespace_path(namespace, com_lib).ok()?;
+
+    let results: Vec<HashMap<String, Variant>> = wmi_con
+        .raw_query(
+            "SELECT Identifier, SensorType, Value, Name FROM Sensor WHERE SensorType = 'Temperature'",
+        )
+        .ok()?;
+
+    let mut preferred: Option<f32> = None;
+    let mut core_temps: Vec<f32> = Vec::new();
+
+    for row in &results {
+        let identifier = match row.get("Identifier") {
+            Some(Variant::String(s)) => s.to_lowercase(),
+            _ => continue,
+        };
+        // Only consider CPU sensors — LHM also exposes GPU/mobo temps here.
+        if !(identifier.contains("/cpu/")
+            || identifier.contains("/intelcpu/")
+            || identifier.contains("/amdcpu/"))
+        {
+            continue;
+        }
+
+        let value = match row.get("Value") {
+            Some(Variant::R4(v)) => *v,
+            Some(Variant::R8(v)) => *v as f32,
+            _ => continue,
+        };
+        if !(value > 0.0 && value < 150.0) {
+            continue;
+        }
+
+        let name = match row.get("Name") {
+            Some(Variant::String(s)) => s.to_lowercase(),
+            _ => String::new(),
+        };
+
+        // Prefer aggregate sensors (in priority order)
+        if preferred.is_none()
+            && (name.contains("package")
+                || name.contains("tdie")
+                || name.contains("ccd average")
+                || name.contains("cpu total"))
+        {
+            preferred = Some(value);
+        }
+
+        if name.contains("core") {
+            core_temps.push(value);
+        }
+    }
+
+    if let Some(temp) = preferred {
+        log::info!("[CPU] Temperature from {} aggregate: {:.1}°C", source_name, temp);
+        return Some(temp);
+    }
+    if !core_temps.is_empty() {
+        let avg = core_temps.iter().sum::<f32>() / core_temps.len() as f32;
+        log::info!(
+            "[CPU] Temperature from {} (avg of {} cores): {:.1}°C",
+            source_name,
+            core_temps.len(),
+            avg
+        );
+        return Some(avg);
+    }
+    None
+}
+
+/// Try to read CPU temperature from standard Windows WMI namespaces.
 /// Attempts multiple WMI classes in order of reliability.
 #[cfg(windows)]
 fn collect_cpu_temp_wmi() -> Option<f32> {
