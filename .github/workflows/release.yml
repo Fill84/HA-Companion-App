@@ -15,17 +15,25 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Get next release version
+          fetch-tags: true
+      - name: Read release version from package.json
         id: get_version
         run: |
-          LATEST=$(git tag | sort -V | tail -n1)
-          if [ -z "$LATEST" ]; then
-            echo "version=1.0.0" >> $GITHUB_OUTPUT
-          else
-            # Bump patch: 1.0.0 -> 1.0.1 (strip optional 'v' prefix)
-            LATEST=${LATEST#v}
-            echo "version=$(echo "$LATEST" | awk -F. -v OFS=. '{$NF++; print}')" >> $GITHUB_OUTPUT
+          # Single source of truth: desktop-app/package.json. Bump it in the
+          # commit that you want released. The workflow refuses to overwrite
+          # an existing tag, so accidental re-releases are caught early
+          # instead of silently rewriting old releases.
+          VERSION=$(node -p "require('./desktop-app/package.json').version")
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: could not read version from desktop-app/package.json"
+            exit 1
           fi
+          if git rev-parse --verify --quiet "refs/tags/$VERSION" >/dev/null; then
+            echo "ERROR: tag '$VERSION' already exists. Bump desktop-app/package.json before pushing."
+            exit 1
+          fi
+          echo "Releasing version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
   build-windows:
     runs-on: windows-latest
@@ -237,6 +245,10 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.version.outputs.version }}
+          # Source files (package.json etc.) are the source of truth, so the
+          # workflow no longer pushes a "chore: set version" commit back to
+          # main. Bump the version in your release commit; the workflow tags
+          # whatever HEAD already says.
           files: |
             windows-installers/nsis/*.exe
             windows-installers/msi/*.msi
@@ -247,25 +259,3 @@ jobs:
             ha-integration/ha-integration.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout repo to update version in tauri.conf.json
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update version in tauri.conf.json to release tag
-        run: |
-          node -e "
-          const fs = require('fs');
-          const f = 'desktop-app/src-tauri/tauri.conf.json';
-          const c = JSON.parse(fs.readFileSync(f, 'utf8'));
-          c.version = '${{ needs.version.outputs.version }}';
-          fs.writeFileSync(f, JSON.stringify(c, null, 4));
-          "
-
-      - name: Commit and push version update
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add desktop-app/src-tauri/tauri.conf.json
-          git diff --staged --quiet || (git commit -m "chore: set version to ${{ needs.version.outputs.version }} for release" && git push)

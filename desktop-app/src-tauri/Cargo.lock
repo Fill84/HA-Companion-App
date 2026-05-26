@@ -1601,7 +1601,7 @@ dependencies = [
 
 [[package]]
 name = "ha-companion"
-version = "1.0.2"
+version = "1.0.1"
 dependencies = [
  "battery",
  "env_logger",
