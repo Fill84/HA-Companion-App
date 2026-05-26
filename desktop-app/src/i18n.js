@@ -13,6 +13,10 @@ const translations = {
         token_help: "Create a token in HA: Profile → Long-Lived Access Tokens",
         connect: "Connect",
         registering: "Registering device...",
+        setup_banner_title: "Reconnection needed",
+        setup_banner_default: "Your previous registration is no longer valid. Click Connect to re-register this device with Home Assistant.",
+        setup_banner_webhook_dead: "Home Assistant no longer recognises this device (the integration was reinstalled or its storage was cleared). Click Connect to register again — your credentials below are still valid.",
+        setup_banner_unreachable: "Cannot reach the Desktop App integration on Home Assistant. Check your server URL, reverse proxy, and that the integration is installed and HA has been restarted.",
 
         // Settings
         settings: "Settings",
@@ -34,6 +38,11 @@ const translations = {
         not_registered: "Not registered",
         updates_at_interval: "Updates at interval",
         static_sensor: "Static (startup only)",
+        reconnect_label: "Connection",
+        reconnect: "Reconnect",
+        reconnecting: "Reconnecting...",
+        reconnect_success: "Reconnected successfully.",
+        reconnect_failed: "Reconnect failed: ",
 
         // Sensor names
         cpu_usage: "CPU Usage",
@@ -69,6 +78,10 @@ const translations = {
         token_help: "Maak een token aan in HA: Profiel → Langlevende Toegangstokens",
         connect: "Verbinden",
         registering: "Apparaat registreren...",
+        setup_banner_title: "Opnieuw verbinden nodig",
+        setup_banner_default: "Je vorige registratie is niet meer geldig. Klik op Verbinden om dit apparaat opnieuw te registreren bij Home Assistant.",
+        setup_banner_webhook_dead: "Home Assistant kent dit apparaat niet meer (de integratie is opnieuw geïnstalleerd of de opslag is gewist). Klik op Verbinden om opnieuw te registreren — je gegevens hieronder zijn nog geldig.",
+        setup_banner_unreachable: "Kan de Desktop App-integratie op Home Assistant niet bereiken. Controleer je server-URL, reverse proxy, en of de integratie geïnstalleerd is en HA opnieuw is gestart.",
 
         // Settings
         settings: "Instellingen",
@@ -90,6 +103,11 @@ const translations = {
         not_registered: "Niet geregistreerd",
         updates_at_interval: "Update bij interval",
         static_sensor: "Statisch (alleen bij start)",
+        reconnect_label: "Verbinding",
+        reconnect: "Opnieuw verbinden",
+        reconnecting: "Opnieuw verbinden...",
+        reconnect_success: "Opnieuw verbonden.",
+        reconnect_failed: "Opnieuw verbinden mislukt: ",
 
         // Sensor names
         cpu_usage: "CPU Gebruik",

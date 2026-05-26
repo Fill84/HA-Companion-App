@@ -433,6 +433,48 @@ body {
     color: var(--ha-error) !important;
 }
 
+.info-row-status {
+    display: block;
+    padding: 8px 12px;
+    margin-top: 4px;
+    border-radius: var(--ha-radius);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.info-row-status.status-ok {
+    background: rgba(76, 175, 80, 0.12);
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.info-row-status.status-error {
+    background: rgba(244, 67, 54, 0.12);
+    border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+/* ==============================================
+   Setup banner (shown when re-registration is required)
+   ============================================== */
+
+.setup-banner {
+    margin-bottom: 24px;
+    padding: 12px 14px;
+    background: rgba(255, 152, 0, 0.12);
+    border: 1px solid var(--ha-accent);
+    border-radius: var(--ha-radius);
+    color: var(--ha-text);
+    font-size: 13px;
+    text-align: left;
+    line-height: 1.5;
+}
+
+.setup-banner strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--ha-accent);
+    font-size: 13px;
+}
+
 /* ==============================================
    Scrollbar
    ============================================== */

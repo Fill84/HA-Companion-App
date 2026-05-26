@@ -16,6 +16,11 @@
             <h1 class="setup-title" data-i18n="setup_title">Home Assistant Companion</h1>
             <p class="setup-subtitle" data-i18n="setup_subtitle">Connect your desktop to Home Assistant</p>
 
+            <div id="setup-banner" class="setup-banner hidden" role="status">
+                <strong data-i18n="setup_banner_title">Reconnection needed</strong>
+                <span id="setup-banner-text" data-i18n="setup_banner_default">Your previous registration is no longer valid. Click Connect to re-register this device with Home Assistant.</span>
+            </div>
+
             <form id="setup-form" class="setup-form">
                 <div class="form-group">
                     <label for="setup-server-url" data-i18n="server_url">Server URL</label>
@@ -110,6 +115,11 @@
                         <span id="info-my-ip" class="info-value">-</span>
                         <button type="button" id="settings-show-ip" class="btn btn-small" data-i18n="show_ip">Show</button>
                     </div>
+                    <div class="info-row">
+                        <span data-i18n="reconnect_label">Connection</span>
+                        <button type="button" id="settings-reconnect" class="btn btn-small" data-i18n="reconnect">Reconnect</button>
+                    </div>
+                    <div id="settings-reconnect-status" class="info-row info-row-status hidden"></div>
                 </div>
             </div>
             <div class="settings-footer">

@@ -14,7 +14,7 @@ mod registration;
 mod sensors;
 mod settings;
 
-use commands::*;
+use commands::{mark_unregistered, *};
 use ha_client::HaClient;
 use sensors::collector::SensorCollector;
 use settings::AppSettings;
@@ -157,6 +157,8 @@ pub fn run(dev_mode: bool) {
             get_settings,
             save_settings,
             register_device,
+            reregister_device,
+            check_connection,
             get_sensor_list,
             update_sensors_now,
             toggle_sensor,
@@ -190,8 +192,16 @@ pub fn run(dev_mode: bool) {
     });
 }
 
+/// True if the error indicates the webhook no longer exists on HA's side.
+/// 404 = webhook handler is gone (integration removed/restarted, storage wiped).
+/// 410 = webhook handler exists in HA but our config entry is missing.
+/// In both cases the local webhook_id is dead and we must re-register.
+fn is_webhook_dead(err: &str) -> bool {
+    err.contains("404") || err.contains("410")
+}
+
 /// Background task that periodically updates sensors
-async fn sensor_update_loop(state: Arc<AppState>, _handle: tauri::AppHandle) {
+async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
     // Wait a bit for app to initialize
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
@@ -217,15 +227,21 @@ async fn sensor_update_loop(state: Arc<AppState>, _handle: tauri::AppHandle) {
                 let ha_client = state.ha_client.lock().await;
                 if let Err(e) = ha_client.register_sensors(&all_sensors).await {
                     log::error!("Failed to re-register sensors: {}", e);
-                    if e.to_string().contains("410") {
-                        log::warn!("Webhook expired, need to re-register");
-                        *state.is_registered.lock().await = false;
+                    let err_str = e.to_string();
+                    drop(ha_client);
+                    if is_webhook_dead(&err_str) {
+                        mark_unregistered(&state, &handle, &err_str).await;
                     }
                 } else {
                     log::debug!("Re-registered {} sensors with HA", all_sensors.len());
                     // Also send state update for ALL sensors (including static)
                     if let Err(e) = ha_client.update_sensors(&all_sensors).await {
                         log::error!("Failed to update all sensors: {}", e);
+                        let err_str = e.to_string();
+                        drop(ha_client);
+                        if is_webhook_dead(&err_str) {
+                            mark_unregistered(&state, &handle, &err_str).await;
+                        }
                     }
                 }
             } else {
@@ -238,11 +254,10 @@ async fn sensor_update_loop(state: Arc<AppState>, _handle: tauri::AppHandle) {
                 let ha_client = state.ha_client.lock().await;
                 if let Err(e) = ha_client.update_sensors(&sensor_data).await {
                     log::error!("Failed to update sensors: {}", e);
-
-                    // If 410 Gone, we need to re-register
-                    if e.to_string().contains("410") {
-                        log::warn!("Webhook expired, need to re-register");
-                        *state.is_registered.lock().await = false;
+                    let err_str = e.to_string();
+                    drop(ha_client);
+                    if is_webhook_dead(&err_str) {
+                        mark_unregistered(&state, &handle, &err_str).await;
                     }
                 }
             }

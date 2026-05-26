@@ -32,6 +32,12 @@ async function openSettings() {
         // Reset "My IP" until user clicks Show
         document.getElementById("info-my-ip").textContent = "-";
 
+        // Hide any leftover reconnect-status from a previous open
+        const reconnectStatus = document.getElementById("settings-reconnect-status");
+        reconnectStatus.classList.add("hidden");
+        reconnectStatus.classList.remove("status-ok", "status-error");
+        reconnectStatus.textContent = "";
+
         // Populate sensor list
         await populateSensorList();
 
@@ -141,6 +147,40 @@ function togglePassword(inputId) {
 }
 
 /**
+ * Force a fresh registration with HA. Used when the saved webhook is dead
+ * or the user simply wants to start over without changing URL/token.
+ */
+async function reconnectNow() {
+    const btn = document.getElementById("settings-reconnect");
+    const statusEl = document.getElementById("settings-reconnect-status");
+    btn.disabled = true;
+    statusEl.classList.remove("hidden", "status-ok", "status-error");
+    statusEl.textContent = t("reconnecting");
+
+    try {
+        await window.__TAURI__.core.invoke("reregister_device");
+        // Refresh device info panel (new webhook_id, status flipped)
+        try {
+            const fresh = await window.__TAURI__.core.invoke("get_settings");
+            document.getElementById("info-webhook-id").textContent = fresh.webhook_id
+                ? fresh.webhook_id.substring(0, 16) + "..."
+                : "-";
+            const statusInfo = document.getElementById("info-status");
+            statusInfo.textContent = fresh.is_registered ? t("registered") : t("not_registered");
+            statusInfo.className = "info-value " + (fresh.is_registered ? "status-ok" : "status-error");
+        } catch (e) { /* best effort */ }
+
+        statusEl.classList.add("status-ok");
+        statusEl.textContent = t("reconnect_success");
+    } catch (err) {
+        statusEl.classList.add("status-error");
+        statusEl.textContent = t("reconnect_failed") + (err.toString());
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+/**
  * Show this machine's public IP (for proxy allowlist)
  */
 async function showMyIp() {
@@ -164,6 +204,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("settings-cancel").addEventListener("click", closeSettings);
     document.getElementById("settings-save").addEventListener("click", saveSettings);
     document.getElementById("settings-show-ip").addEventListener("click", showMyIp);
+    document.getElementById("settings-reconnect").addEventListener("click", reconnectNow);
 
     // Close on overlay click
     document.getElementById("settings-overlay").addEventListener("click", (e) => {

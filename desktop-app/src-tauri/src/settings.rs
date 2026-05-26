@@ -113,4 +113,15 @@ impl AppSettings {
 
         Ok(())
     }
+
+    /// Drop the saved webhook_id and persist. Used when HA reports the
+    /// webhook is gone (404/410) so the next startup correctly shows the
+    /// setup screen instead of looping on a dead webhook.
+    pub fn clear_webhook(&mut self, app: &AppHandle) -> Result<(), String> {
+        if self.webhook_id.is_none() {
+            return Ok(());
+        }
+        self.webhook_id = None;
+        self.save(app)
+    }
 }
