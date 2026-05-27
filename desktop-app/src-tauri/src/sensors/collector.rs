@@ -17,6 +17,27 @@ pub(crate) fn format_boot_time(timestamp: u64) -> Option<String> {
     Some(dt.to_rfc3339_opts(SecondsFormat::Secs, false))
 }
 
+/// Build the Last Boot SensorValue, or None when the boot time is unknown.
+pub(crate) fn build_last_boot_sensor(boot_time: u64) -> Option<SensorValue> {
+    let iso = format_boot_time(boot_time)?;
+
+    let mut attributes = HashMap::new();
+    attributes.insert("boot_timestamp".into(), serde_json::json!(boot_time));
+
+    Some(SensorValue {
+        unique_id: "last_boot".into(),
+        name: "Last Boot".into(),
+        state: serde_json::json!(iso),
+        sensor_type: "sensor".into(),
+        device_class: Some("timestamp".into()),
+        unit_of_measurement: None,
+        state_class: None,
+        icon: Some("mdi:restart".into()),
+        attributes,
+        update_at_interval: false,
+    })
+}
+
 /// Build the SensorValue for System Uptime.
 ///
 /// The state is the raw seconds count as a JSON Number — required by HA's
@@ -602,25 +623,13 @@ impl SensorCollector {
 
         // Last boot time (static)
         if self.is_enabled("last_boot") {
-            let boot_time = sys_info.boot_time;
-            // Format as ISO-like string
-            let datetime = format_boot_time(boot_time).unwrap_or_default();
-            sensors.push(SensorValue {
-                unique_id: "last_boot".into(),
-                name: "Last Boot".into(),
-                state: serde_json::json!(datetime),
-                sensor_type: "sensor".into(),
-                device_class: Some("timestamp".into()),
-                unit_of_measurement: None,
-                state_class: None,
-                icon: Some("mdi:restart".into()),
-                attributes: {
-                    let mut attrs = HashMap::new();
-                    attrs.insert("boot_timestamp".into(), serde_json::json!(boot_time));
-                    attrs
-                },
-                update_at_interval: false,
-            });
+            if let Some(sensor) = build_last_boot_sensor(sys_info.boot_time) {
+                sensors.push(sensor);
+            } else {
+                log::warn!(
+                    "[SystemInfo] boot_time is 0 — skipping Last Boot sensor"
+                );
+            }
         }
 
         // Logged-in user (static)
@@ -843,5 +852,27 @@ mod tests {
             sensor.attributes.get("human"),
             Some(&serde_json::json!("1d 1h 1m"))
         );
+    }
+
+    #[test]
+    fn build_last_boot_sensor_returns_none_for_zero() {
+        assert!(build_last_boot_sensor(0).is_none());
+    }
+
+    #[test]
+    fn build_last_boot_sensor_emits_iso_state_for_valid_timestamp() {
+        let sensor = build_last_boot_sensor(1779796800).expect("must be Some");
+
+        assert_eq!(sensor.unique_id, "last_boot");
+        assert_eq!(sensor.device_class.as_deref(), Some("timestamp"));
+        assert_eq!(
+            sensor.state,
+            serde_json::json!("2026-05-26T12:00:00+00:00"),
+        );
+        assert_eq!(
+            sensor.attributes.get("boot_timestamp"),
+            Some(&serde_json::json!(1779796800u64)),
+        );
+        assert!(!sensor.update_at_interval, "last_boot is static");
     }
 }
