@@ -73,7 +73,7 @@ pub async fn register_device(
     // first sensor registration is retried with exponential backoff. On a
     // healthy HA this typically succeeds within 1-2 seconds; on a slow or
     // heavily loaded HA we keep trying for ~25s before giving up.
-    let all_sensors = collector.collect_all();
+    let all_sensors = collector.collect_all(None);
 
     let first_sensor = all_sensors.first().cloned().ok_or_else(|| {
         log::error!("[HA] No sensors collected — cannot complete registration");

@@ -11,7 +11,10 @@ pub struct CpuData {
     pub logical_core_count: usize,
 }
 
-pub fn collect(sys: &System) -> CpuData {
+pub fn collect(
+    sys: &System,
+    hwmon: Option<&crate::sensors::hwmon_client::HwmonSnapshot>,
+) -> CpuData {
     let cpus = sys.cpus();
     let model = cpus.first().map(|c| c.brand().to_string()).unwrap_or_default();
     let usage_percent = sys.global_cpu_usage();
@@ -19,9 +22,18 @@ pub fn collect(sys: &System) -> CpuData {
     let core_count = sys.physical_core_count().unwrap_or(0);
     let logical_core_count = cpus.len();
 
-    // Try to get CPU temperature from sysinfo components first
-    #[cfg_attr(not(windows), allow(unused_mut))]
-    let mut temperature = {
+    // Phase 2A: prefer the bundled hwmon helper snapshot when present.
+    // Falls through to the existing sysinfo/WMI chain when the helper
+    // wasn't started, crashed, or returned both fields as null.
+    let temperature: Option<f32> = hwmon.and_then(|s| {
+        let t = s.best_cpu_temp();
+        if let Some(v) = t {
+            log::info!("[CPU] Temperature from hwmon-helper: {:.1}°C", v);
+        }
+        t
+    });
+
+    let temperature = temperature.or_else(|| {
         let components = sysinfo::Components::new_with_refreshed_list();
         let all_labels: Vec<String> = components.iter().map(|c| c.label().to_string()).collect();
         if all_labels.is_empty() {
@@ -29,32 +41,24 @@ pub fn collect(sys: &System) -> CpuData {
         } else {
             log::debug!("[CPU] sysinfo thermal components: {:?}", all_labels);
         }
-        let found = components
+        components
             .iter()
             .find(|c| {
                 let label = c.label().to_lowercase();
                 label.contains("cpu") || label.contains("core") || label.contains("package")
-            });
-        if let Some(comp) = found {
-            log::info!("[CPU] sysinfo temperature from '{}': {:.1}°C", comp.label(), comp.temperature());
-            Some(comp.temperature())
-        } else {
-            log::debug!("[CPU] sysinfo: no CPU/core/package component found");
-            None
-        }
-    };
+            })
+            .map(|comp| {
+                log::info!("[CPU] sysinfo temperature from '{}': {:.1}°C", comp.label(), comp.temperature());
+                comp.temperature()
+            })
+    });
 
-    // Fallback: on Windows, try WMI thermal zone if sysinfo returned None.
-    // LibreHardwareMonitor / OpenHardwareMonitor are checked first because
-    // they expose accurate per-core CPU sensors and don't need admin on our
-    // side. The standard ACPI thermal zone queries are tried as a last
-    // resort — they often return a static, non-CPU value on consumer mobos.
     #[cfg(windows)]
-    if temperature.is_none() {
-        temperature = collect_cpu_temp_lhm()
+    let temperature = temperature.or_else(|| {
+        collect_cpu_temp_lhm()
             .or_else(collect_cpu_temp_ohm)
-            .or_else(collect_cpu_temp_wmi);
-    }
+            .or_else(collect_cpu_temp_wmi)
+    });
 
     match temperature {
         Some(t) => log::info!("[CPU] Final temperature = {:.1}°C", t),
@@ -305,4 +309,32 @@ fn collect_cpu_temp_wmi() -> Option<f32> {
         without a kernel-mode driver; Phase 2 will address this with a bundled hwmon helper."
     );
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sensors::hwmon_client::HwmonSnapshot;
+
+    #[test]
+    fn collect_uses_hwmon_snapshot_when_provided() {
+        let sys = sysinfo::System::new_all();
+        let snap = Some(HwmonSnapshot {
+            cpu_package_c: Some(48.5),
+            cpu_core_avg_c: Some(46.0),
+        });
+        let data = collect(&sys, snap.as_ref());
+        assert_eq!(data.temperature, Some(48.5),
+            "hwmon snapshot must win over WMI fallback");
+    }
+
+    #[test]
+    fn collect_falls_back_when_snapshot_is_none() {
+        // Without a snapshot we exercise the existing WMI chain. The result
+        // depends on hardware so we only assert that the function doesn't
+        // panic and returns a value with the expected shape.
+        let sys = sysinfo::System::new_all();
+        let data = collect(&sys, None);
+        assert!(data.usage_percent >= 0.0);
+    }
 }

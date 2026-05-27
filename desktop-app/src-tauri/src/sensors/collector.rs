@@ -131,18 +131,24 @@ impl SensorCollector {
     }
 
     /// Collect all sensors (both static and dynamic) — used at startup
-    pub fn collect_all(&mut self) -> Vec<SensorValue> {
+    pub fn collect_all(
+        &mut self,
+        hwmon: Option<&crate::sensors::hwmon_client::HwmonSnapshot>,
+    ) -> Vec<SensorValue> {
         self.sys.refresh_all();
         let mut sensors = Vec::new();
 
-        sensors.extend(self.collect_static());
-        sensors.extend(self.collect_dynamic());
+        sensors.extend(self.collect_static(hwmon));
+        sensors.extend(self.collect_dynamic(hwmon));
 
         sensors
     }
 
     /// Collect only dynamic sensors — used at interval
-    pub fn collect_dynamic(&mut self) -> Vec<SensorValue> {
+    pub fn collect_dynamic(
+        &mut self,
+        hwmon: Option<&crate::sensors::hwmon_client::HwmonSnapshot>,
+    ) -> Vec<SensorValue> {
         self.sys.refresh_all();
         let mut sensors = Vec::new();
 
@@ -150,7 +156,7 @@ impl SensorCollector {
         let cpu_enabled =
             self.is_enabled("cpu_usage") || self.is_enabled("cpu_frequency") || self.is_enabled("cpu_temperature");
         if cpu_enabled {
-            let cpu_data = cpu::collect(&self.sys);
+            let cpu_data = cpu::collect(&self.sys, hwmon);
 
             if self.is_enabled("cpu_usage") {
                 sensors.push(SensorValue {
@@ -488,12 +494,15 @@ impl SensorCollector {
     }
 
     /// Collect static sensors — only at startup
-    pub fn collect_static(&mut self) -> Vec<SensorValue> {
+    pub fn collect_static(
+        &mut self,
+        hwmon: Option<&crate::sensors::hwmon_client::HwmonSnapshot>,
+    ) -> Vec<SensorValue> {
         let mut sensors = Vec::new();
 
         // CPU model (static)
         if self.is_enabled("cpu_model") {
-            let cpu_data = cpu::collect(&self.sys);
+            let cpu_data = cpu::collect(&self.sys, hwmon);
             sensors.push(SensorValue {
                 unique_id: "cpu_model".into(),
                 name: "CPU Model".into(),
