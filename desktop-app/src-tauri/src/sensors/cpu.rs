@@ -56,6 +56,11 @@ pub fn collect(sys: &System) -> CpuData {
             .or_else(collect_cpu_temp_wmi);
     }
 
+    match temperature {
+        Some(t) => log::info!("[CPU] Final temperature = {:.1}°C", t),
+        None => log::warn!("[CPU] Final temperature = None (will be reported as unknown to HA)"),
+    }
+
     CpuData {
         model,
         usage_percent,
@@ -90,14 +95,39 @@ fn collect_cpu_temp_hwmon(namespace: &str, source_name: &str) -> Option<f32> {
     use std::collections::HashMap;
     use wmi::{COMLibrary, Variant, WMIConnection};
 
-    let com_lib = COMLibrary::new().ok()?;
-    let wmi_con = WMIConnection::with_namespace_path(namespace, com_lib).ok()?;
+    let com_lib = match COMLibrary::new() {
+        Ok(c) => c,
+        Err(e) => {
+            log::info!("[CPU] {}: COM init failed: {}", source_name, e);
+            return None;
+        }
+    };
+    let wmi_con = match WMIConnection::with_namespace_path(namespace, com_lib) {
+        Ok(w) => w,
+        Err(e) => {
+            log::info!(
+                "[CPU] {}: namespace {} not available ({}). Hardware monitor probably not running.",
+                source_name, namespace, e
+            );
+            return None;
+        }
+    };
 
-    let results: Vec<HashMap<String, Variant>> = wmi_con
-        .raw_query(
-            "SELECT Identifier, SensorType, Value, Name FROM Sensor WHERE SensorType = 'Temperature'",
-        )
-        .ok()?;
+    let results: Vec<HashMap<String, Variant>> = match wmi_con.raw_query(
+        "SELECT Identifier, SensorType, Value, Name FROM Sensor WHERE SensorType = 'Temperature'",
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            log::info!("[CPU] {}: Sensor query failed: {}", source_name, e);
+            return None;
+        }
+    };
+
+    log::info!(
+        "[CPU] {}: Sensor query returned {} temperature rows",
+        source_name,
+        results.len()
+    );
 
     let mut preferred: Option<f32> = None;
     let mut core_temps: Vec<f32> = Vec::new();
@@ -144,6 +174,13 @@ fn collect_cpu_temp_hwmon(namespace: &str, source_name: &str) -> Option<f32> {
         }
     }
 
+    log::info!(
+        "[CPU] {}: matched {} CPU core temps, preferred aggregate = {:?}",
+        source_name,
+        core_temps.len(),
+        preferred
+    );
+
     if let Some(temp) = preferred {
         log::info!("[CPU] Temperature from {} aggregate: {:.1}°C", source_name, temp);
         return Some(temp);
@@ -176,27 +213,39 @@ fn collect_cpu_temp_wmi() -> Option<f32> {
                 "SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature",
             ) {
                 Ok(results) => {
-                    for result in &results {
-                        if let Some(variant) = result.get("CurrentTemperature") {
-                            let raw_temp = match variant {
-                                Variant::UI4(n) => Some(*n as f32),
-                                Variant::UI2(n) => Some(*n as f32),
-                                Variant::I4(n) => Some(*n as f32),
-                                _ => None,
-                            };
-                            if let Some(tenths_kelvin) = raw_temp {
-                                let celsius = (tenths_kelvin / 10.0) - 273.15;
-                                if celsius > 0.0 && celsius < 150.0 {
-                                    log::info!("[CPU] Temperature from MSAcpi_ThermalZone: {:.1}°C", celsius);
-                                    return Some(celsius);
-                                }
+                    log::info!(
+                        "[CPU] MSAcpi_ThermalZone returned {} row(s)",
+                        results.len()
+                    );
+                    for (i, result) in results.iter().enumerate() {
+                        let raw = result.get("CurrentTemperature");
+                        log::info!("[CPU] MSAcpi_ThermalZone row {}: raw CurrentTemperature = {:?}", i, raw);
+                        let raw_temp = match raw {
+                            Some(Variant::UI4(n)) => Some(*n as f32),
+                            Some(Variant::UI2(n)) => Some(*n as f32),
+                            Some(Variant::I4(n)) => Some(*n as f32),
+                            _ => None,
+                        };
+                        if let Some(tenths_kelvin) = raw_temp {
+                            let celsius = (tenths_kelvin / 10.0) - 273.15;
+                            log::info!(
+                                "[CPU] MSAcpi_ThermalZone row {} -> {:.1}°C (raw {} tenths-K)",
+                                i, celsius, tenths_kelvin
+                            );
+                            if celsius > 0.0 && celsius < 150.0 {
+                                log::info!("[CPU] Temperature from MSAcpi_ThermalZone: {:.1}°C", celsius);
+                                return Some(celsius);
+                            } else {
+                                log::info!(
+                                    "[CPU] MSAcpi_ThermalZone row {} out of range ({:.1}°C), discarding",
+                                    i, celsius
+                                );
                             }
                         }
                     }
-                    log::debug!("[CPU] MSAcpi_ThermalZone returned {} results but no valid temp", results.len());
                 }
                 Err(e) => {
-                    log::debug!("[CPU] MSAcpi_ThermalZoneTemperature query failed (needs admin?): {}", e);
+                    log::info!("[CPU] MSAcpi_ThermalZoneTemperature query failed (needs admin?): {}", e);
                 }
             }
         }
@@ -210,33 +259,50 @@ fn collect_cpu_temp_wmi() -> Option<f32> {
                 "SELECT Temperature FROM Win32_PerfFormattedData_Counters_ThermalZoneInformation",
             ) {
                 Ok(results) => {
-                    for result in &results {
-                        if let Some(variant) = result.get("Temperature") {
-                            let kelvin = match variant {
-                                Variant::UI4(n) => Some(*n as f32),
-                                Variant::UI2(n) => Some(*n as f32),
-                                Variant::I4(n) => Some(*n as f32),
-                                Variant::UI8(n) => Some(*n as f32),
-                                _ => None,
-                            };
-                            if let Some(k) = kelvin {
-                                let celsius = k - 273.15;
-                                if celsius > 0.0 && celsius < 150.0 {
-                                    log::info!("[CPU] Temperature from ThermalZoneInformation: {:.1}°C", celsius);
-                                    return Some(celsius);
-                                }
+                    log::info!(
+                        "[CPU] ThermalZoneInformation returned {} row(s)",
+                        results.len()
+                    );
+                    for (i, result) in results.iter().enumerate() {
+                        let raw = result.get("Temperature");
+                        log::info!("[CPU] ThermalZoneInformation row {}: raw Temperature = {:?}", i, raw);
+                        let kelvin = match raw {
+                            Some(Variant::UI4(n)) => Some(*n as f32),
+                            Some(Variant::UI2(n)) => Some(*n as f32),
+                            Some(Variant::I4(n)) => Some(*n as f32),
+                            Some(Variant::UI8(n)) => Some(*n as f32),
+                            _ => None,
+                        };
+                        if let Some(k) = kelvin {
+                            let celsius = k - 273.15;
+                            log::info!(
+                                "[CPU] ThermalZoneInformation row {} -> {:.1}°C (raw {} K)",
+                                i, celsius, k
+                            );
+                            if celsius > 0.0 && celsius < 150.0 {
+                                log::info!("[CPU] Temperature from ThermalZoneInformation: {:.1}°C", celsius);
+                                return Some(celsius);
+                            } else {
+                                log::info!(
+                                    "[CPU] ThermalZoneInformation row {} out of range ({:.1}°C), discarding",
+                                    i, celsius
+                                );
                             }
                         }
                     }
-                    log::debug!("[CPU] ThermalZoneInformation returned {} results but no valid temp", results.len());
                 }
                 Err(e) => {
-                    log::debug!("[CPU] ThermalZoneInformation query failed: {}", e);
+                    log::info!("[CPU] ThermalZoneInformation query failed: {}", e);
                 }
             }
         }
     }
 
-    log::warn!("[CPU] No CPU temperature available from any WMI source");
+    log::warn!(
+        "[CPU] No CPU temperature available from any WMI source. \
+        Check log entries above — sysinfo, LHM, OHM, MSAcpi, and ThermalZoneInformation \
+        were all attempted. This is a known limitation on consumer Windows hardware \
+        without a kernel-mode driver; Phase 2 will address this with a bundled hwmon helper."
+    );
     None
 }
