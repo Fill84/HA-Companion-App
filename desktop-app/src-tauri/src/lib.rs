@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 
 mod commands;
 mod ha_client;
+mod logging;
 mod registration;
 mod sensors;
 mod settings;
