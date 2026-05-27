@@ -1,9 +1,21 @@
 use std::collections::HashMap;
 
+use chrono::{SecondsFormat, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
 use super::{battery, cpu, disk, gpu, memory, network, system_info};
+
+/// Format a UNIX timestamp (seconds since 1970-01-01 UTC) as an RFC3339 string
+/// with a `+00:00` offset suffix. Returns `None` for the failure-mode value 0,
+/// so the Last Boot sensor can be omitted entirely rather than reporting 1970.
+pub(crate) fn format_boot_time(timestamp: u64) -> Option<String> {
+    if timestamp == 0 {
+        return None;
+    }
+    let dt = Utc.timestamp_opt(timestamp as i64, 0).single()?;
+    Some(dt.to_rfc3339_opts(SecondsFormat::Secs, false))
+}
 
 /// Represents a single sensor value for HA
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -574,7 +586,7 @@ impl SensorCollector {
         if self.is_enabled("last_boot") {
             let boot_time = sys_info.boot_time;
             // Format as ISO-like string
-            let datetime = chrono_from_timestamp(boot_time);
+            let datetime = format_boot_time(boot_time).unwrap_or_default();
             sensors.push(SensorValue {
                 unique_id: "last_boot".into(),
                 name: "Last Boot".into(),
@@ -742,62 +754,38 @@ impl SensorCollector {
     }
 }
 
-/// Convert a UNIX timestamp to an ISO 8601 string for HA timestamp device_class
-fn chrono_from_timestamp(timestamp: u64) -> String {
-    use std::time::{Duration, UNIX_EPOCH};
-    let dt = UNIX_EPOCH + Duration::from_secs(timestamp);
-    // Format as ISO 8601 (HA expects this for timestamp device_class)
-    let secs = timestamp;
-    let days_since_epoch = secs / 86400;
-    let time_of_day = secs % 86400;
-    let hours = time_of_day / 3600;
-    let minutes = (time_of_day % 3600) / 60;
-    let seconds = time_of_day % 60;
-
-    // Simple date calculation from days since epoch
-    let mut y = 1970i64;
-    let mut remaining_days = days_since_epoch as i64;
-
-    loop {
-        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
-        if remaining_days < days_in_year {
-            break;
-        }
-        remaining_days -= days_in_year;
-        y += 1;
-    }
-
-    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
-    let month_days = [
-        31,
-        if leap { 29 } else { 28 },
-        31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
-    ];
-    let mut m = 0usize;
-    for (i, &d) in month_days.iter().enumerate() {
-        if remaining_days < d as i64 {
-            m = i;
-            break;
-        }
-        remaining_days -= d as i64;
-    }
-
-    let _ = dt; // suppress unused warning
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}+00:00",
-        y,
-        m + 1,
-        remaining_days + 1,
-        hours,
-        minutes,
-        seconds
-    )
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SensorListItem {
     pub id: String,
     pub name: String,
     pub enabled: bool,
     pub updates_at_interval: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_boot_time_returns_iso_for_known_epoch() {
+        // 2026-05-26 12:00:00 UTC = 1779796800
+        assert_eq!(
+            format_boot_time(1779796800),
+            Some("2026-05-26T12:00:00+00:00".to_string())
+        );
+    }
+
+    #[test]
+    fn format_boot_time_returns_none_for_zero() {
+        assert_eq!(format_boot_time(0), None);
+    }
+
+    #[test]
+    fn format_boot_time_handles_unix_epoch_plus_one() {
+        // Smallest non-zero, ensures we don't accidentally return None for tiny values.
+        assert_eq!(
+            format_boot_time(1),
+            Some("1970-01-01T00:00:01+00:00".to_string())
+        );
+    }
 }
