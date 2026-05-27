@@ -17,6 +17,44 @@ pub(crate) fn format_boot_time(timestamp: u64) -> Option<String> {
     Some(dt.to_rfc3339_opts(SecondsFormat::Secs, false))
 }
 
+/// Build the SensorValue for System Uptime.
+///
+/// The state is the raw seconds count as a JSON Number — required by HA's
+/// `state_class: total_increasing` + `device_class: duration` contract.
+/// The human-readable "1d 2h 3m" form is exposed as an attribute so it
+/// remains visible without breaking validation.
+pub(crate) fn build_uptime_sensor(uptime_seconds: u64) -> SensorValue {
+    let days = uptime_seconds / 86400;
+    let hours = uptime_seconds / 3600;
+    let minutes = (uptime_seconds % 3600) / 60;
+
+    let human = if days > 0 {
+        format!("{}d {}h {}m", days, hours - days * 24, minutes)
+    } else {
+        format!("{}h {}m", hours, minutes)
+    };
+
+    let mut attributes = HashMap::new();
+    attributes.insert("uptime_seconds".into(), serde_json::json!(uptime_seconds));
+    attributes.insert("days".into(), serde_json::json!(days));
+    attributes.insert("hours".into(), serde_json::json!(hours));
+    attributes.insert("minutes".into(), serde_json::json!(minutes));
+    attributes.insert("human".into(), serde_json::json!(human));
+
+    SensorValue {
+        unique_id: "system_uptime".into(),
+        name: "System Uptime".into(),
+        state: serde_json::json!(uptime_seconds),
+        sensor_type: "sensor".into(),
+        device_class: Some("duration".into()),
+        unit_of_measurement: Some("s".into()),
+        state_class: Some("total_increasing".into()),
+        icon: Some("mdi:clock-outline".into()),
+        attributes,
+        update_at_interval: true,
+    }
+}
+
 /// Represents a single sensor value for HA
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SensorValue {
@@ -388,27 +426,7 @@ impl SensorCollector {
             let dyn_info = system_info::collect_dynamic();
 
             if self.is_enabled("system_uptime") {
-                let hours = dyn_info.uptime_seconds / 3600;
-                let minutes = (dyn_info.uptime_seconds % 3600) / 60;
-                sensors.push(SensorValue {
-                    unique_id: "system_uptime".into(),
-                    name: "System Uptime".into(),
-                    state: serde_json::json!(format!("{}h {}m", hours, minutes)),
-                    sensor_type: "sensor".into(),
-                    device_class: Some("duration".into()),
-                    unit_of_measurement: Some("s".into()),
-                    state_class: Some("total_increasing".into()),
-                    icon: Some("mdi:clock-outline".into()),
-                    attributes: {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("uptime_seconds".into(), serde_json::json!(dyn_info.uptime_seconds));
-                        attrs.insert("days".into(), serde_json::json!(dyn_info.uptime_seconds / 86400));
-                        attrs.insert("hours".into(), serde_json::json!(hours));
-                        attrs.insert("minutes".into(), serde_json::json!(minutes));
-                        attrs
-                    },
-                    update_at_interval: true,
-                });
+                sensors.push(build_uptime_sensor(dyn_info.uptime_seconds));
             }
 
             if self.is_enabled("process_count") {
@@ -786,6 +804,44 @@ mod tests {
         assert_eq!(
             format_boot_time(1),
             Some("1970-01-01T00:00:01+00:00".to_string())
+        );
+    }
+
+    #[test]
+    fn build_uptime_sensor_state_is_numeric_seconds() {
+        let sensor = build_uptime_sensor(3725); // 1h 2m 5s
+
+        match &sensor.state {
+            serde_json::Value::Number(n) => {
+                assert_eq!(n.as_u64(), Some(3725), "state must be the raw seconds count");
+            }
+            other => panic!("state must be a JSON Number, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn build_uptime_sensor_metadata_matches_ha_duration_contract() {
+        let sensor = build_uptime_sensor(0);
+
+        assert_eq!(sensor.unique_id, "system_uptime");
+        assert_eq!(sensor.sensor_type, "sensor");
+        assert_eq!(sensor.device_class.as_deref(), Some("duration"));
+        assert_eq!(sensor.unit_of_measurement.as_deref(), Some("s"));
+        assert_eq!(sensor.state_class.as_deref(), Some("total_increasing"));
+        assert!(sensor.update_at_interval);
+    }
+
+    #[test]
+    fn build_uptime_sensor_attributes_contain_human_breakdown() {
+        let sensor = build_uptime_sensor(90061); // 1d 1h 1m 1s
+
+        assert_eq!(sensor.attributes.get("uptime_seconds"), Some(&serde_json::json!(90061)));
+        assert_eq!(sensor.attributes.get("days"), Some(&serde_json::json!(1)));
+        assert_eq!(sensor.attributes.get("hours"), Some(&serde_json::json!(25))); // total hours
+        assert_eq!(sensor.attributes.get("minutes"), Some(&serde_json::json!(1)));
+        assert_eq!(
+            sensor.attributes.get("human"),
+            Some(&serde_json::json!("1d 1h 1m"))
         );
     }
 }
