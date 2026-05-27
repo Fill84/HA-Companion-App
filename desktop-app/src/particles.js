@@ -52,7 +52,11 @@
                     },
                 },
                 size: {
-                    value: { min: 1, max: 3 },
+                    // Smaller than HA's 1-3px because WebView2 on Windows
+                    // multiplies by display scaling (typically 1.25-1.5x),
+                    // making HA's defaults visibly chunky. 0.5-1.5 lands at
+                    // roughly the same on-screen size as HA's web build.
+                    value: { min: 0.5, max: 1.5 },
                     animation: {
                         destroy: "none",
                         enable: true,
