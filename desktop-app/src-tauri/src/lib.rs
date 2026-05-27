@@ -29,11 +29,33 @@ pub struct AppState {
 }
 
 pub fn run(dev_mode: bool) {
-    // In dev/debug builds, init logger so log::info!/error! show in terminal
-    if dev_mode || cfg!(debug_assertions) {
-        let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+    // Always log to file. In dev/debug, also mirror to stderr so the
+    // terminal shows live output.
+    let file_log_path = logging::log_file_path();
+    if let Ok(ref path) = file_log_path {
+        if let Err(e) = logging::init_logger(path) {
+            // Logger init failed — fall back to env_logger so we at least get
+            // stderr output and can diagnose why the file logger failed.
+            eprintln!("[bootstrap] file logger init failed: {} — falling back to stderr", e);
+            let _ = env_logger::Builder::from_env(
+                env_logger::Env::default().default_filter_or("info"),
+            )
             .try_init();
+        }
+    } else {
+        // APPDATA not set (CI/Linux dev) — stderr is fine.
+        let _ = env_logger::Builder::from_env(
+            env_logger::Env::default().default_filter_or("info"),
+        )
+        .try_init();
     }
+
+    log::info!(
+        "[bootstrap] HA Companion v{} starting (dev_mode={}, log_file={:?})",
+        env!("CARGO_PKG_VERSION"),
+        dev_mode,
+        file_log_path.as_ref().ok(),
+    );
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -134,10 +156,6 @@ pub fn run(dev_mode: bool) {
                     }
                 })
                 .build(app)?;
-
-            // When --dev is used, devtools can be enabled (e.g. via cargo tauri dev).
-            // In production, F12 is disabled by the deny-internal-toggle-devtools capability.
-            let _ = dev_mode;
 
             // Spawn background sensor update loop
             let bg_state = state.clone();
