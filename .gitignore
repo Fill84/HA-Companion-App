@@ -5,3 +5,7 @@ desktop-app/src-tauri/target/*
 desktop-app/dist/*
 .claude/*
 ha-integration/
+
+# Phase 2: hwmon sidecar built artefact — built per-machine, not committed
+desktop-app/src-tauri/binaries/hwmon-helper-*.exe
+hwmon-helper/publish/
