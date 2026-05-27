@@ -4,6 +4,10 @@ using HwmonHelper;
 const string Version = "0.1.0";
 var stdin = Console.In;
 var stdout = Console.Out;
+var stderr = Console.Error;
+
+using var hw = new HardwareReader();
+hw.DescribeToStderr(stderr);
 
 string? line;
 while ((line = stdin.ReadLine()) is not null)
@@ -27,14 +31,11 @@ while ((line = stdin.ReadLine()) is not null)
     switch (cmdProp.GetString())
     {
         case "hello":
-            Write(new HelloResponse(Version, new[] { "hello" }),
+            Write(new HelloResponse(Version, new[] { "hello", "poll" }),
                   ProtocolJsonContext.Default.HelloResponse);
             break;
         case "poll":
-            // Phase 2 task 3 implements the real reading. For task 1 we
-            // return nulls so the Rust client can be tested end-to-end first.
-            Write(new PollResponse(null, null),
-                  ProtocolJsonContext.Default.PollResponse);
+            Write(hw.Snapshot(), ProtocolJsonContext.Default.PollResponse);
             break;
         case "shutdown":
             return 0;
