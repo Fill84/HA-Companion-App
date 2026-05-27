@@ -140,7 +140,7 @@ pub async fn update_sensors_now(
 
     let sensor_data = {
         let mut collector = state.collector.lock().await;
-        collector.collect_dynamic(None)
+        collector.collect_dynamic()
     };
 
     let ha_client = state.ha_client.lock().await;

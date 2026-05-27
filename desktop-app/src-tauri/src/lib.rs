@@ -273,21 +273,6 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
     // Wait a bit for app to initialize
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
-    // Spawn the bundled hwmon-helper sidecar. If it fails (binary missing
-    // on a dev machine that hasn't built it yet, or it crashes), we fall
-    // back to the WMI chain in cpu::collect.
-    let mut hwmon: Option<crate::sensors::hwmon_client::HwmonClient> =
-        match crate::sensors::hwmon_client::HwmonClient::spawn_default().await {
-            Ok(c) => {
-                log::info!("[hwmon] sidecar started");
-                Some(c)
-            }
-            Err(e) => {
-                log::warn!("[hwmon] sidecar not started ({e}); falling back to WMI chain only");
-                None
-            }
-        };
-
     let mut cycle_count: u64 = 0;
 
     loop {
@@ -299,23 +284,10 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
         let is_registered = *state.is_registered.lock().await;
 
         if is_registered {
-            // Poll the sidecar once per cycle. On failure we drop the client
-            // entirely and continue with the WMI fallback chain.
-            let hwmon_snap = if let Some(client) = hwmon.as_mut() {
-                match client.poll().await {
-                    Ok(s) => Some(s),
-                    Err(e) => {
-                        log::warn!("[hwmon] poll failed, dropping sidecar: {e}");
-                        hwmon = None;
-                        None
-                    }
-                }
-            } else { None };
-
             if cycle_count % 10 == 0 {
                 let all_sensors = {
                     let mut collector = state.collector.lock().await;
-                    collector.collect_all(hwmon_snap.as_ref())
+                    collector.collect_all()
                 };
                 let ha_client = state.ha_client.lock().await;
                 if let Err(e) = ha_client.register_sensors(&all_sensors).await {
@@ -339,7 +311,7 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
             } else {
                 let sensor_data = {
                     let mut collector = state.collector.lock().await;
-                    collector.collect_dynamic(hwmon_snap.as_ref())
+                    collector.collect_dynamic()
                 };
 
                 let ha_client = state.ha_client.lock().await;

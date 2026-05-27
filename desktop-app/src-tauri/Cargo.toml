@@ -1,6 +1,6 @@
 [package]
 name = "ha-companion"
-version = "1.0.3"
+version = "1.0.4"
 description = "Home Assistant Desktop Companion App"
 authors = ["HA Companion"]
 edition = "2021"
@@ -34,6 +34,10 @@ simplelog = "0.12"
 wmi = "0.14"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Services",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

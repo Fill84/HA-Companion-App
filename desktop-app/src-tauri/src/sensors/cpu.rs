@@ -11,10 +11,7 @@ pub struct CpuData {
     pub logical_core_count: usize,
 }
 
-pub fn collect(
-    sys: &System,
-    hwmon: Option<&crate::sensors::hwmon_client::HwmonSnapshot>,
-) -> CpuData {
+pub fn collect(sys: &System) -> CpuData {
     let cpus = sys.cpus();
     let model = cpus.first().map(|c| c.brand().to_string()).unwrap_or_default();
     let usage_percent = sys.global_cpu_usage();
@@ -22,16 +19,31 @@ pub fn collect(
     let core_count = sys.physical_core_count().unwrap_or(0);
     let logical_core_count = cpus.len();
 
-    // Phase 2A: prefer the bundled hwmon helper snapshot when present.
-    // Falls through to the existing sysinfo/WMI chain when the helper
-    // wasn't started, crashed, or returned both fields as null.
-    let temperature: Option<f32> = hwmon.and_then(|s| {
-        let t = s.best_cpu_temp();
-        if let Some(v) = t {
-            log::info!("[CPU] Temperature from hwmon-helper: {:.1}°C", v);
+    // Native Windows path: read CPU package temp directly via the WinRing0
+    // kernel driver bundled inside our exe. Same driver every other monitoring
+    // tool uses. Requires admin on the very first run (driver install).
+    #[cfg(windows)]
+    let temperature: Option<f32> = match crate::sensors::winring0::WinRing0::open() {
+        Ok(ring0) => match crate::sensors::winring0::read_intel_package_temp(&ring0) {
+            Ok(t) => {
+                log::info!("[CPU] Temperature from WinRing0 MSR: {:.1}°C", t);
+                Some(t)
+            }
+            Err(e) => {
+                log::info!("[CPU] WinRing0 MSR read failed: {} (non-Intel CPU? falling back)", e);
+                None
+            }
+        },
+        Err(e) => {
+            log::info!(
+                "[CPU] WinRing0 driver not available: {} (need admin on first run, falling back)",
+                e
+            );
+            None
         }
-        t
-    });
+    };
+    #[cfg(not(windows))]
+    let temperature: Option<f32> = None;
 
     let temperature = temperature.or_else(|| {
         let components = sysinfo::Components::new_with_refreshed_list();
@@ -314,27 +326,14 @@ fn collect_cpu_temp_wmi() -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sensors::hwmon_client::HwmonSnapshot;
 
     #[test]
-    fn collect_uses_hwmon_snapshot_when_provided() {
+    fn collect_returns_basic_cpu_data() {
+        // Hardware-dependent test — only checks the function returns
+        // sensible non-panic values for fields that don't need a driver.
         let sys = sysinfo::System::new_all();
-        let snap = Some(HwmonSnapshot {
-            cpu_package_c: Some(48.5),
-            cpu_core_avg_c: Some(46.0),
-        });
-        let data = collect(&sys, snap.as_ref());
-        assert_eq!(data.temperature, Some(48.5),
-            "hwmon snapshot must win over WMI fallback");
-    }
-
-    #[test]
-    fn collect_falls_back_when_snapshot_is_none() {
-        // Without a snapshot we exercise the existing WMI chain. The result
-        // depends on hardware so we only assert that the function doesn't
-        // panic and returns a value with the expected shape.
-        let sys = sysinfo::System::new_all();
-        let data = collect(&sys, None);
+        let data = collect(&sys);
         assert!(data.usage_percent >= 0.0);
+        assert!(data.logical_core_count > 0);
     }
 }

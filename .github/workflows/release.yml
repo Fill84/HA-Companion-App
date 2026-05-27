@@ -44,19 +44,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
       - uses: dtolnay/rust-toolchain@stable
-
-      - name: Build hwmon-helper sidecar
-        shell: pwsh
-        run: |
-          powershell -ExecutionPolicy Bypass -File scripts/build-helper.ps1
-          if (-not (Test-Path "desktop-app/src-tauri/binaries/hwmon-helper-x86_64-pc-windows-msvc.exe")) {
-            Write-Error "hwmon-helper was not produced"
-            exit 1
-          }
 
       - name: Update version in tauri.conf.json
         run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version='${{ needs.version.outputs.version }}';fs.writeFileSync(f,JSON.stringify(c,null,4))"
@@ -137,9 +125,6 @@ jobs:
       - name: Update version in tauri.conf.json
         run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version='${{ needs.version.outputs.version }}';fs.writeFileSync(f,JSON.stringify(c,null,4))"
 
-      - name: Strip externalBin (hwmon-helper is Windows-only)
-        run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));if(c.bundle&&c.bundle.externalBin){delete c.bundle.externalBin;fs.writeFileSync(f,JSON.stringify(c,null,4));}"
-
       - name: Build desktop app
         run: |
           cd desktop-app
@@ -197,9 +182,6 @@ jobs:
 
       - name: Update version in tauri.conf.json
         run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version='${{ needs.version.outputs.version }}';fs.writeFileSync(f,JSON.stringify(c,null,4))"
-
-      - name: Strip externalBin (hwmon-helper is Windows-only)
-        run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));if(c.bundle&&c.bundle.externalBin){delete c.bundle.externalBin;fs.writeFileSync(f,JSON.stringify(c,null,4));}"
 
       - name: Build desktop app
         run: |

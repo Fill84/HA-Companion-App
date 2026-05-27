@@ -1,6 +1,6 @@
 {
     "name": "ha-companion-desktop",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "description": "Home Assistant Desktop Companion App",
     "private": true,
     "scripts": {
