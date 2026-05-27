@@ -1,21 +1,51 @@
 /* ==============================================
-   Home Assistant Companion - Styles
+   Home Assistant Companion — visual style mirrors
+   the HA frontend auth/login page (dev branch).
+   Class names match index.html and main.js / settings.js
+   so DOM logic stays untouched.
    ============================================== */
 
 :root {
+    /* HA brand */
     --ha-primary: #03a9f4;
     --ha-primary-dark: #0288d1;
+    --ha-primary-soft: rgba(3, 169, 244, 0.16);
     --ha-accent: #ff9800;
-    --ha-bg: #1c1c1c;
-    --ha-surface: #252525;
-    --ha-surface-light: #333333;
-    --ha-text: #e1e1e1;
-    --ha-text-secondary: #9e9e9e;
     --ha-error: #f44336;
     --ha-success: #4caf50;
-    --ha-border: #404040;
-    --ha-radius: 8px;
-    --ha-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+    /* HA dark surface palette (mirrors --primary-background-color /
+       --ha-card-background / --divider-color when HA is in dark mode) */
+    --ha-bg: #111111;
+    --ha-surface: #1c1c1c;
+    --ha-surface-elevated: #232323;
+    --ha-input-bg: #2a2a2a;
+    --ha-input-bg-hover: #313131;
+    --ha-divider: rgba(255, 255, 255, 0.12);
+    --ha-divider-soft: rgba(255, 255, 255, 0.06);
+
+    /* Text */
+    --ha-text: #e1e1e1;
+    --ha-text-secondary: #9b9b9b;
+    --ha-text-disabled: #6c6c6c;
+
+    /* Shape — HA uses two main radii: lg for cards, md for buttons/inputs */
+    --ha-radius-lg: 12px;
+    --ha-radius-md: 8px;
+    --ha-radius-pill: 28px;
+
+    /* Elevation */
+    --ha-shadow-card: 0 2px 4px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.4);
+    --ha-shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.55);
+
+    /* Spacing scale (matches HA's --ha-space-*) */
+    --ha-space-1: 4px;
+    --ha-space-2: 8px;
+    --ha-space-3: 12px;
+    --ha-space-4: 16px;
+    --ha-space-5: 24px;
+    --ha-space-6: 32px;
+    --ha-space-8: 48px;
 }
 
 * {
@@ -25,12 +55,16 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: "Roboto", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
     background: var(--ha-bg);
     color: var(--ha-text);
     overflow: hidden;
     width: 100vw;
     height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 .hidden {
@@ -38,7 +72,9 @@ body {
 }
 
 /* ==============================================
-   Setup Screen
+   Setup screen — mirrors HA's <ha-authorize> layout:
+   centered card, thin border + subtle shadow, large
+   title in normal weight, generous padding.
    ============================================== */
 
 .setup-screen {
@@ -47,35 +83,42 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #1a237e 0%, #0d47a1 50%, #01579b 100%);
+    padding: var(--ha-space-5);
+    background: var(--ha-bg);
 }
 
 .setup-container {
     background: var(--ha-surface);
-    border-radius: 16px;
-    padding: 48px;
+    border: 1px solid var(--ha-divider);
+    border-radius: var(--ha-radius-lg);
+    padding: var(--ha-space-8) var(--ha-space-6);
     width: 100%;
-    max-width: 440px;
-    box-shadow: var(--ha-shadow);
+    max-width: 420px;
+    box-shadow: var(--ha-shadow-card);
     text-align: center;
 }
 
 .setup-icon {
-    font-size: 64px;
-    margin-bottom: 16px;
+    width: 96px;
+    height: 96px;
+    margin: 0 auto var(--ha-space-4);
+    display: block;
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
 .setup-title {
-    font-size: 24px;
-    font-weight: 600;
-    margin-bottom: 8px;
+    font-size: 28px;
+    font-weight: 400;
+    line-height: 1.2;
+    margin-bottom: var(--ha-space-2);
     color: var(--ha-text);
 }
 
 .setup-subtitle {
     font-size: 14px;
     color: var(--ha-text-secondary);
-    margin-bottom: 32px;
+    margin-bottom: var(--ha-space-6);
 }
 
 .setup-form {
@@ -83,11 +126,12 @@ body {
 }
 
 /* ==============================================
-   Forms
+   Forms — filled inputs with bottom-focus accent,
+   matching HA's MWC text fields.
    ============================================== */
 
 .form-group {
-    margin-bottom: 20px;
+    margin-bottom: var(--ha-space-4);
 }
 
 .form-group label {
@@ -95,9 +139,8 @@ body {
     font-size: 13px;
     font-weight: 500;
     color: var(--ha-text-secondary);
-    margin-bottom: 6px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    margin-bottom: var(--ha-space-1);
+    letter-spacing: 0.15px;
 }
 
 .form-group input[type="url"],
@@ -107,35 +150,53 @@ body {
 .form-group select {
     width: 100%;
     padding: 12px 14px;
-    background: var(--ha-bg);
-    border: 1px solid var(--ha-border);
-    border-radius: var(--ha-radius);
+    background: var(--ha-input-bg);
+    border: 1px solid transparent;
+    border-radius: var(--ha-radius-md);
     color: var(--ha-text);
+    font-family: inherit;
     font-size: 14px;
+    line-height: 1.4;
     outline: none;
-    transition: border-color 0.2s;
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-group input:hover,
+.form-group select:hover {
+    background: var(--ha-input-bg-hover);
 }
 
 .form-group input:focus,
 .form-group select:focus {
     border-color: var(--ha-primary);
+    box-shadow: 0 0 0 3px var(--ha-primary-soft);
+    background: var(--ha-input-bg-hover);
+}
+
+.form-group input::placeholder {
+    color: var(--ha-text-disabled);
 }
 
 .form-group-inline {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: var(--ha-space-3);
 }
 
 .form-group-inline label {
     margin-bottom: 0;
-    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+    color: var(--ha-text);
+    font-size: 14px;
 }
 
 .form-group-inline input[type="checkbox"] {
     width: 20px;
     height: 20px;
     accent-color: var(--ha-primary);
+    cursor: pointer;
 }
 
 .password-input {
@@ -150,111 +211,165 @@ body {
 
 .toggle-password {
     position: absolute;
-    right: 8px;
+    right: 6px;
     top: 50%;
     transform: translateY(-50%);
     background: none;
     border: none;
+    color: var(--ha-text-secondary);
     cursor: pointer;
     font-size: 18px;
-    padding: 4px;
-    opacity: 0.6;
+    padding: 6px;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .toggle-password:hover {
-    opacity: 1;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--ha-text);
 }
 
 .help-text {
     display: block;
     font-size: 12px;
     color: var(--ha-text-secondary);
-    margin-top: 4px;
+    margin-top: var(--ha-space-1);
+    line-height: 1.4;
 }
 
 /* ==============================================
-   Buttons
+   Buttons — HA Material 3 inspired:
+   - primary: filled pill in brand blue
+   - secondary: tonal surface
+   - small: compact text button
    ============================================== */
 
 .btn {
-    padding: 12px 24px;
+    padding: 10px 24px;
     border: none;
-    border-radius: var(--ha-radius);
+    border-radius: var(--ha-radius-pill);
+    font-family: inherit;
     font-size: 14px;
     font-weight: 500;
+    letter-spacing: 0.1px;
     cursor: pointer;
-    transition: background-color 0.2s, transform 0.1s;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.btn-small {
-    padding: 4px 10px;
-    font-size: 12px;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    user-select: none;
 }
 
 .btn:active {
     transform: scale(0.98);
 }
 
+.btn:focus-visible {
+    outline: 2px solid var(--ha-primary);
+    outline-offset: 2px;
+}
+
 .btn-primary {
     background: var(--ha-primary);
-    color: white;
+    color: #ffffff;
     width: 100%;
 }
 
 .btn-primary:hover {
     background: var(--ha-primary-dark);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .btn-secondary {
-    background: var(--ha-surface-light);
+    background: var(--ha-surface-elevated);
     color: var(--ha-text);
+    border: 1px solid var(--ha-divider);
 }
 
 .btn-secondary:hover {
-    background: var(--ha-border);
+    background: var(--ha-input-bg-hover);
+}
+
+.btn-small {
+    padding: 4px 14px;
+    min-height: 28px;
+    font-size: 12px;
+    font-weight: 500;
 }
 
 /* ==============================================
-   Messages
+   Messages — alerts inspired by <ha-alert>.
    ============================================== */
 
 .error-message {
-    margin-top: 16px;
-    padding: 12px;
-    background: rgba(244, 67, 54, 0.1);
-    border: 1px solid var(--ha-error);
-    border-radius: var(--ha-radius);
+    margin-top: var(--ha-space-4);
+    padding: var(--ha-space-3) var(--ha-space-4);
+    background: rgba(244, 67, 54, 0.12);
+    border: 1px solid rgba(244, 67, 54, 0.35);
+    border-radius: var(--ha-radius-md);
     color: var(--ha-error);
     font-size: 13px;
+    line-height: 1.4;
 }
 
 .loading {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    margin-top: 16px;
+    gap: var(--ha-space-3);
+    margin-top: var(--ha-space-4);
     color: var(--ha-text-secondary);
     font-size: 14px;
 }
 
 .spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid var(--ha-border);
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--ha-divider);
     border-top-color: var(--ha-primary);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* ==============================================
-   Settings Modal
+   Setup banner (warning / info pill above form)
+   ============================================== */
+
+.setup-banner {
+    margin-bottom: var(--ha-space-5);
+    padding: var(--ha-space-3) var(--ha-space-4);
+    background: rgba(255, 152, 0, 0.10);
+    border: 1px solid rgba(255, 152, 0, 0.4);
+    border-radius: var(--ha-radius-md);
+    color: var(--ha-text);
+    font-size: 13px;
+    text-align: left;
+    line-height: 1.5;
+}
+
+.setup-banner strong {
+    display: block;
+    margin-bottom: var(--ha-space-1);
+    color: var(--ha-accent);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* ==============================================
+   Settings modal — same card language as the setup
+   screen, scrollable body, sticky header + footer.
    ============================================== */
 
 .settings-overlay {
@@ -263,60 +378,72 @@ body {
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.55);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 10000;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(6px);
+    padding: var(--ha-space-5);
 }
 
 .settings-modal {
     background: var(--ha-surface);
-    border-radius: 16px;
+    border: 1px solid var(--ha-divider);
+    border-radius: var(--ha-radius-lg);
     width: 100%;
-    max-width: 540px;
+    max-width: 560px;
     max-height: 85vh;
     display: flex;
     flex-direction: column;
-    box-shadow: var(--ha-shadow);
+    box-shadow: var(--ha-shadow-overlay);
+    overflow: hidden;
 }
 
 .settings-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--ha-border);
+    padding: var(--ha-space-5) var(--ha-space-5) var(--ha-space-4);
+    border-bottom: 1px solid var(--ha-divider-soft);
 }
 
 .settings-header h2 {
-    font-size: 18px;
-    font-weight: 600;
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--ha-text);
 }
 
 .settings-close {
     background: none;
     border: none;
     color: var(--ha-text-secondary);
-    font-size: 24px;
+    font-size: 26px;
+    line-height: 1;
     cursor: pointer;
     padding: 4px;
-    line-height: 1;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .settings-close:hover {
+    background: rgba(255, 255, 255, 0.06);
     color: var(--ha-text);
 }
 
 .settings-body {
-    padding: 24px;
+    padding: var(--ha-space-5);
     overflow-y: auto;
     flex: 1;
 }
 
 .settings-section {
-    margin-bottom: 28px;
+    margin-bottom: var(--ha-space-6);
 }
 
 .settings-section:last-child {
@@ -324,42 +451,44 @@ body {
 }
 
 .settings-section h3 {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--ha-primary);
-    text-transform: uppercase;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ha-text-secondary);
     letter-spacing: 0.5px;
-    margin-bottom: 16px;
+    text-transform: uppercase;
+    margin-bottom: var(--ha-space-3);
 }
 
 .settings-footer {
     display: flex;
     justify-content: flex-end;
-    gap: 12px;
-    padding: 16px 24px;
-    border-top: 1px solid var(--ha-border);
+    gap: var(--ha-space-3);
+    padding: var(--ha-space-4) var(--ha-space-5);
+    border-top: 1px solid var(--ha-divider-soft);
+    background: var(--ha-surface);
 }
 
 .settings-footer .btn {
     width: auto;
-    min-width: 100px;
+    min-width: 96px;
 }
 
 /* ==============================================
-   Sensor List
+   Sensor list
    ============================================== */
 
 .sensor-list {
     max-height: 240px;
     overflow-y: auto;
+    border-radius: var(--ha-radius-md);
 }
 
 .sensor-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 0;
-    border-bottom: 1px solid var(--ha-border);
+    gap: var(--ha-space-3);
+    padding: 10px var(--ha-space-2);
+    border-bottom: 1px solid var(--ha-divider-soft);
 }
 
 .sensor-row:last-child {
@@ -371,6 +500,7 @@ body {
     height: 18px;
     accent-color: var(--ha-primary);
     flex-shrink: 0;
+    cursor: pointer;
 }
 
 .sensor-row label {
@@ -378,31 +508,33 @@ body {
     font-size: 14px;
     cursor: pointer;
     color: var(--ha-text);
-    text-transform: none !important;
-    letter-spacing: normal !important;
-    margin-bottom: 0 !important;
+    font-weight: 400;
+    letter-spacing: 0;
+    margin-bottom: 0;
 }
 
 .sensor-badge {
     font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 12px;
+    padding: 2px 10px;
+    border-radius: 999px;
     white-space: nowrap;
     flex-shrink: 0;
+    font-weight: 500;
+    letter-spacing: 0.2px;
 }
 
 .badge-dynamic {
-    background: rgba(3, 169, 244, 0.15);
+    background: var(--ha-primary-soft);
     color: var(--ha-primary);
 }
 
 .badge-static {
-    background: rgba(158, 158, 158, 0.15);
+    background: rgba(158, 158, 158, 0.18);
     color: var(--ha-text-secondary);
 }
 
 /* ==============================================
-   Info Rows
+   Info rows — like HA's <state-card> compact rows
    ============================================== */
 
 .info-row {
@@ -411,18 +543,20 @@ body {
     align-items: center;
     padding: 8px 0;
     font-size: 13px;
+    gap: var(--ha-space-3);
 }
 
-.info-row span:first-child {
+.info-row > span:first-child {
     color: var(--ha-text-secondary);
-    text-transform: none;
-    letter-spacing: normal;
+    font-weight: 400;
 }
 
 .info-value {
-    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-family: "Roboto Mono", "SF Mono", "Fira Code", "Cascadia Code", monospace;
     font-size: 12px;
     color: var(--ha-text);
+    text-align: right;
+    word-break: break-all;
 }
 
 .status-ok {
@@ -435,52 +569,30 @@ body {
 
 .info-row-status {
     display: block;
-    padding: 8px 12px;
-    margin-top: 4px;
-    border-radius: var(--ha-radius);
+    padding: var(--ha-space-2) var(--ha-space-3);
+    margin-top: var(--ha-space-1);
+    border-radius: var(--ha-radius-md);
     font-size: 12px;
     line-height: 1.4;
 }
 
 .info-row-status.status-ok {
     background: rgba(76, 175, 80, 0.12);
-    border: 1px solid rgba(76, 175, 80, 0.3);
+    border: 1px solid rgba(76, 175, 80, 0.35);
 }
 
 .info-row-status.status-error {
     background: rgba(244, 67, 54, 0.12);
-    border: 1px solid rgba(244, 67, 54, 0.3);
+    border: 1px solid rgba(244, 67, 54, 0.35);
 }
 
 /* ==============================================
-   Setup banner (shown when re-registration is required)
-   ============================================== */
-
-.setup-banner {
-    margin-bottom: 24px;
-    padding: 12px 14px;
-    background: rgba(255, 152, 0, 0.12);
-    border: 1px solid var(--ha-accent);
-    border-radius: var(--ha-radius);
-    color: var(--ha-text);
-    font-size: 13px;
-    text-align: left;
-    line-height: 1.5;
-}
-
-.setup-banner strong {
-    display: block;
-    margin-bottom: 4px;
-    color: var(--ha-accent);
-    font-size: 13px;
-}
-
-/* ==============================================
-   Scrollbar
+   Scrollbar — thin, unobtrusive (HA also uses thin)
    ============================================== */
 
 ::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
+    height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -488,8 +600,8 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--ha-border);
-    border-radius: 3px;
+    background: var(--ha-divider);
+    border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {

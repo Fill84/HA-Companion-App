@@ -9,6 +9,7 @@ if (fs.existsSync('dist')) {
 // Create dist folder structure
 fs.mkdirSync('dist');
 fs.mkdirSync('dist/src');
+fs.mkdirSync('dist/icons');
 
 // Copy index.html
 fs.copyFileSync('index.html', 'dist/index.html');
@@ -17,6 +18,12 @@ fs.copyFileSync('index.html', 'dist/index.html');
 const files = ['i18n.js', 'main.js', 'settings.js', 'styles.css'];
 files.forEach(file => {
     fs.copyFileSync(path.join('src', file), path.join('dist/src', file));
+});
+
+// Copy icons used by index.html (integration brand logo + retina variant)
+const iconFiles = ['icon.png', 'icon@2x.png'];
+iconFiles.forEach(file => {
+    fs.copyFileSync(path.join('icons', file), path.join('dist/icons', file));
 });
 
 console.log('Web assets copied to dist folder');
