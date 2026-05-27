@@ -125,6 +125,9 @@ jobs:
       - name: Update version in tauri.conf.json
         run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version='${{ needs.version.outputs.version }}';fs.writeFileSync(f,JSON.stringify(c,null,4))"
 
+      - name: Strip externalBin (hwmon-helper is Windows-only)
+        run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));if(c.bundle&&c.bundle.externalBin){delete c.bundle.externalBin;fs.writeFileSync(f,JSON.stringify(c,null,4));}"
+
       - name: Build desktop app
         run: |
           cd desktop-app
@@ -182,6 +185,9 @@ jobs:
 
       - name: Update version in tauri.conf.json
         run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version='${{ needs.version.outputs.version }}';fs.writeFileSync(f,JSON.stringify(c,null,4))"
+
+      - name: Strip externalBin (hwmon-helper is Windows-only)
+        run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));if(c.bundle&&c.bundle.externalBin){delete c.bundle.externalBin;fs.writeFileSync(f,JSON.stringify(c,null,4));}"
 
       - name: Build desktop app
         run: |
