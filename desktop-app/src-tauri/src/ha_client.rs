@@ -294,6 +294,34 @@ impl HaClient {
         Ok(())
     }
 
+    /// Tell HA that this device is shutting down. Best-effort; the caller
+    /// must time-bound the await (e.g. with tokio::time::timeout) because
+    /// the OS may have already started reclaiming sockets when this runs.
+    pub async fn send_device_offline(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let webhook_id = self
+            .webhook_id
+            .as_ref()
+            .ok_or("No webhook_id configured")?;
+        let url = format!("{}/api/webhook/{}", self.base_url(), webhook_id);
+        let payload = WebhookPayload {
+            command_type: "device_offline".to_string(),
+            data: serde_json::json!({}),
+        };
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(format!("device_offline returned {}", response.status()).into());
+        }
+        Ok(())
+    }
+
     /// Check if the webhook is still valid
     pub async fn check_webhook(&self) -> bool {
         let webhook_id = match &self.webhook_id {
@@ -320,5 +348,21 @@ impl HaClient {
             Ok(response) => response.status().is_success(),
             Err(_) => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn device_offline_payload_serializes_with_expected_shape() {
+        let payload = WebhookPayload {
+            command_type: "device_offline".to_string(),
+            data: serde_json::json!({}),
+        };
+        let s = serde_json::to_string(&payload).expect("serialize");
+        assert!(s.contains(r#""type":"device_offline""#), "payload was: {s}");
+        assert!(s.contains(r#""data":{}"#), "payload was: {s}");
     }
 }
