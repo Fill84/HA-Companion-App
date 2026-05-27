@@ -102,6 +102,9 @@ async function initApp() {
 
         // Set language
         setLanguage(settings.language || "en");
+        const lang = settings.language || "en";
+        const setupLang = document.getElementById("setup-language");
+        if (setupLang) setupLang.value = lang;
 
         if (!settings.server_url || !settings.access_token) {
             // No config — show setup wizard, no banner.
@@ -155,6 +158,16 @@ async function initApp() {
 document.addEventListener("DOMContentLoaded", () => {
     // Setup form
     document.getElementById("setup-form").addEventListener("submit", handleSetup);
+
+    // Language picker in the setup footer — live-changes the UI strings.
+    // Persistence happens on next save_settings call (e.g. when the user
+    // submits the form) so the desktop process picks up the choice too.
+    const setupLang = document.getElementById("setup-language");
+    if (setupLang) {
+        setupLang.addEventListener("change", (e) => {
+            setLanguage(e.target.value);
+        });
+    }
 
     // Listen for tray events
     if (window.__TAURI__) {

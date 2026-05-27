@@ -14,38 +14,54 @@
 <body>
     <!-- Setup Screen (shown when not configured) -->
     <div id="setup-screen" class="setup-screen hidden">
-        <div class="setup-container">
+        <div class="setup-stack">
             <img class="setup-icon" src="icons/icon.png" srcset="icons/icon@2x.png 2x" alt="Home Assistant Companion" width="96" height="96">
-            <h1 class="setup-title" data-i18n="setup_title">Home Assistant Companion</h1>
-            <p class="setup-subtitle" data-i18n="setup_subtitle">Connect your desktop to Home Assistant</p>
 
-            <div id="setup-banner" class="setup-banner hidden" role="status">
-                <strong data-i18n="setup_banner_title">Reconnection needed</strong>
-                <span id="setup-banner-text" data-i18n="setup_banner_default">Your previous registration is no longer valid. Click Connect to re-register this device with Home Assistant.</span>
+            <div class="setup-container">
+                <h1 class="setup-title" data-i18n="setup_title">Home Assistant Companion</h1>
+                <p class="setup-subtitle" data-i18n="setup_subtitle">Connect your desktop to Home Assistant</p>
+
+                <div id="setup-banner" class="setup-banner hidden" role="status">
+                    <strong data-i18n="setup_banner_title">Reconnection needed</strong>
+                    <span id="setup-banner-text" data-i18n="setup_banner_default">Your previous registration is no longer valid. Click Connect to re-register this device with Home Assistant.</span>
+                </div>
+
+                <form id="setup-form" class="setup-form">
+                    <div class="form-group">
+                        <label for="setup-server-url" data-i18n="server_url">Server URL</label>
+                        <input type="url" id="setup-server-url" placeholder="http://homeassistant.local:8123" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="setup-token" data-i18n="access_token">Long-Lived Access Token</label>
+                        <div class="password-input">
+                            <input type="password" id="setup-token" placeholder="eyJ0eXAiOi..." required>
+                            <button type="button" class="toggle-password"
+                                onclick="togglePassword('setup-token')">👁</button>
+                        </div>
+                        <small class="help-text" data-i18n="token_help">Create a token in HA: Profile → Long-Lived Access
+                            Tokens</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary" data-i18n="connect">Connect</button>
+                    <div id="setup-error" class="error-message hidden"></div>
+                    <div id="setup-loading" class="loading hidden">
+                        <div class="spinner"></div>
+                        <span data-i18n="registering">Registering device...</span>
+                    </div>
+                </form>
             </div>
 
-            <form id="setup-form" class="setup-form">
-                <div class="form-group">
-                    <label for="setup-server-url" data-i18n="server_url">Server URL</label>
-                    <input type="url" id="setup-server-url" placeholder="http://homeassistant.local:8123" required>
-                </div>
-                <div class="form-group">
-                    <label for="setup-token" data-i18n="access_token">Long-Lived Access Token</label>
-                    <div class="password-input">
-                        <input type="password" id="setup-token" placeholder="eyJ0eXAiOi..." required>
-                        <button type="button" class="toggle-password"
-                            onclick="togglePassword('setup-token')">👁</button>
-                    </div>
-                    <small class="help-text" data-i18n="token_help">Create a token in HA: Profile → Long-Lived Access
-                        Tokens</small>
-                </div>
-                <button type="submit" class="btn btn-primary" data-i18n="connect">Connect</button>
-                <div id="setup-error" class="error-message hidden"></div>
-                <div id="setup-loading" class="loading hidden">
-                    <div class="spinner"></div>
-                    <span data-i18n="registering">Registering device...</span>
-                </div>
-            </form>
+            <div class="setup-footer-row">
+                <label class="setup-language">
+                    <select id="setup-language">
+                        <option value="en">English</option>
+                        <option value="nl">Nederlands</option>
+                    </select>
+                </label>
+                <a class="setup-help-link" href="https://github.com/Fill84/HA-Companion-App" target="_blank" rel="noopener" data-i18n="help">
+                    <span data-i18n="help">Help</span>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7zM19 19H5V5h7V3H5c-1.11 0-2 .89-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7z"/></svg>
+                </a>
+            </div>
         </div>
     </div>
 
@@ -132,6 +148,8 @@
         </div>
     </div>
 
+    <script src="vendor/tsparticles.preset.links.bundle.min.js"></script>
+    <script src="src/particles.js"></script>
     <script src="src/i18n.js"></script>
     <script src="src/settings.js"></script>
     <script src="src/main.js"></script>

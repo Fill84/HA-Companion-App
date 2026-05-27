@@ -85,6 +85,19 @@ body {
     justify-content: center;
     padding: var(--ha-space-5);
     background: var(--ha-bg);
+    position: relative;
+    z-index: 1; /* above tsparticles canvas (zIndex -1) but below modal */
+}
+
+/* HA layout: icon ABOVE card, card centered, footer below — all stacked.
+   Matches the visual rhythm of HA's auth page. */
+.setup-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--ha-space-4);
+    width: 100%;
+    max-width: 420px;
 }
 
 .setup-container {
@@ -93,7 +106,6 @@ body {
     border-radius: var(--ha-radius-lg);
     padding: var(--ha-space-8) var(--ha-space-6);
     width: 100%;
-    max-width: 420px;
     box-shadow: var(--ha-shadow-card);
     text-align: center;
 }
@@ -101,10 +113,96 @@ body {
 .setup-icon {
     width: 96px;
     height: 96px;
-    margin: 0 auto var(--ha-space-4);
     display: block;
     user-select: none;
     -webkit-user-drag: none;
+    /* No bottom margin — the .setup-stack gap handles spacing now */
+}
+
+/* Footer row under the card: language dropdown left, Help link right.
+   Mirrors HA's "<language> ▾   Help ↗" footer on its login page. */
+.setup-footer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0 var(--ha-space-2);
+    font-size: 14px;
+}
+
+.setup-language {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.setup-language select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--ha-text);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 6px 22px 6px 8px;
+    cursor: pointer;
+    border-radius: var(--ha-radius-md);
+    outline: none;
+    transition: background-color 0.15s ease;
+}
+
+.setup-language select:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.setup-language select:focus-visible {
+    outline: 2px solid var(--ha-primary);
+    outline-offset: 1px;
+}
+
+.setup-language::after {
+    content: "";
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    border-right: 1.5px solid var(--ha-text);
+    border-bottom: 1.5px solid var(--ha-text);
+    transform: translateY(-75%) rotate(45deg);
+    pointer-events: none;
+}
+
+.setup-help-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    color: var(--ha-primary);
+    font-weight: 500;
+    text-decoration: none;
+    border-radius: var(--ha-radius-md);
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.setup-help-link:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--ha-primary-dark);
+}
+
+.setup-help-link svg {
+    flex-shrink: 0;
+}
+
+/* tsparticles injects its own canvas with id="tsparticles". Pin it behind
+   everything else; the library already sets z-index: -1 via fullScreen
+   options, but we add the rule defensively in case the option is overridden. */
+#tsparticles {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
 }
 
 .setup-title {
