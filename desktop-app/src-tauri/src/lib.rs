@@ -14,6 +14,7 @@ mod logging;
 mod registration;
 mod sensors;
 mod settings;
+mod shutdown_hook;
 
 use commands::{mark_unregistered, *};
 use ha_client::HaClient;
@@ -91,6 +92,33 @@ pub fn run(dev_mode: bool) {
             });
 
             app.manage(state.clone());
+
+            // Phase 3: Windows shutdown hook — fire a synchronous send of
+            // device_offline before Windows reaps the process.
+            {
+                let hook_state = state.clone();
+                shutdown_hook::install(move || {
+                    let state = hook_state.clone();
+                    // Spawn into a Tokio runtime, block briefly so the OS
+                    // shutdown handshake waits for the HTTP POST.
+                    let _ = std::thread::spawn(move || {
+                        if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                        {
+                            rt.block_on(async move {
+                                let ha = state.ha_client.lock().await;
+                                let _ = tokio::time::timeout(
+                                    std::time::Duration::from_secs(2),
+                                    ha.send_device_offline(),
+                                )
+                                .await;
+                            });
+                        }
+                    })
+                    .join();
+                });
+            }
 
             // Build tray menu
             let show_hide = MenuItemBuilder::with_id("show_hide", "Show / Hide")
@@ -205,6 +233,27 @@ pub fn run(dev_mode: bool) {
                         let _ = window.hide();
                     }
                 }
+            }
+            RunEvent::ExitRequested { .. } => {
+                // Phase 3: User chose "Quit" from the tray. Best-effort send
+                // device_offline (2s timeout) so HA flips offline immediately.
+                let state: Arc<AppState> = app_handle.state::<Arc<AppState>>().inner().clone();
+                let _ = std::thread::spawn(move || {
+                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        rt.block_on(async move {
+                            let ha = state.ha_client.lock().await;
+                            let _ = tokio::time::timeout(
+                                std::time::Duration::from_secs(2),
+                                ha.send_device_offline(),
+                            )
+                            .await;
+                        });
+                    }
+                })
+                .join();
             }
             _ => {}
         }
