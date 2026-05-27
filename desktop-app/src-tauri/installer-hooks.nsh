@@ -1,21 +1,19 @@
 ; Tauri NSIS hook — register the WinRing0 kernel driver as a Windows
-; service during install (the NSIS installer is already elevated, so this
-; is the right moment). After install, the runtime ha-companion.exe just
-; opens \\.\WinRing0_1_2_0 — no admin needed, no UAC prompt each launch.
+; service during install (the NSIS installer is already elevated). After
+; install, the runtime ha-companion.exe just opens \\.\WinRing0_1_2_0 —
+; no admin needed, no UAC prompt each launch.
 ;
-; ${PROJECTDIR} is provided by Tauri's NSIS template and points at
-; desktop-app/src-tauri/, so the driver path is fully qualified at
-; NSIS-compile time.
+; The driver file is bundled via `bundle.resources` in tauri.conf.json,
+; so by the time POSTINSTALL fires Tauri has already extracted it to
+; $INSTDIR\resources\drivers\WinRing0x64.sys.
 
 !macro NSIS_HOOK_POSTINSTALL
-    ; Drop the bundled driver into System32\drivers. Overwrite is safe —
-    ; if another tool installed an identical-or-newer copy it'll still
-    ; work; if the file is locked by an active driver, NSIS retries.
-    SetOutPath "$SYSDIR\drivers"
-    File "${PROJECTDIR}\drivers\WinRing0x64.sys"
+    ; Make sure target dir exists, then copy the bundled driver there.
+    CreateDirectory "$SYSDIR\drivers"
+    CopyFiles /SILENT "$INSTDIR\resources\drivers\WinRing0x64.sys" "$SYSDIR\drivers"
 
-    ; Only create the service if it doesn't exist (some users already have
-    ; it from LHM/HWiNFO/CoreTemp/etc — leave those alone, just use them).
+    ; Only create the service if it doesn't exist (some users already
+    ; have it from LHM/HWiNFO/CoreTemp/etc — leave those alone).
     nsExec::Exec 'sc.exe query WinRing0_1_2_0'
     Pop $0
     StrCmp $0 "0" service_exists service_create
