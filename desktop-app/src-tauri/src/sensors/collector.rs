@@ -18,18 +18,26 @@ pub(crate) fn format_boot_time(timestamp: u64) -> Option<String> {
 }
 
 /// Build the Last Boot SensorValue, or None when the boot time is unknown.
+///
+/// State is a human-readable UTC date+time string (e.g. "2026-05-26 12:00 UTC").
+/// We deliberately do NOT set `device_class: timestamp` because the Python
+/// integration assigns our string directly to `_attr_native_value`, and HA's
+/// timestamp class then rejects the string and marks the entity unavailable.
+/// Raw ISO and epoch are kept in attributes for power-users / automations.
 pub(crate) fn build_last_boot_sensor(boot_time: u64) -> Option<SensorValue> {
     let iso = format_boot_time(boot_time)?;
+    let readable = format_boot_time_readable(boot_time)?;
 
     let mut attributes = HashMap::new();
     attributes.insert("boot_timestamp".into(), serde_json::json!(boot_time));
+    attributes.insert("iso_utc".into(), serde_json::json!(iso));
 
     Some(SensorValue {
         unique_id: "last_boot".into(),
         name: "Last Boot".into(),
-        state: serde_json::json!(iso),
+        state: serde_json::json!(readable),
         sensor_type: "sensor".into(),
-        device_class: Some("timestamp".into()),
+        device_class: None,
         unit_of_measurement: None,
         state_class: None,
         icon: Some("mdi:restart".into()),
@@ -38,12 +46,23 @@ pub(crate) fn build_last_boot_sensor(boot_time: u64) -> Option<SensorValue> {
     })
 }
 
+/// Format a UNIX timestamp as a human-readable UTC date+time string,
+/// e.g. "2026-05-26 12:00 UTC". Returns None for the failure-mode value 0.
+pub(crate) fn format_boot_time_readable(timestamp: u64) -> Option<String> {
+    if timestamp == 0 {
+        return None;
+    }
+    let dt = Utc.timestamp_opt(timestamp as i64, 0).single()?;
+    Some(dt.format("%Y-%m-%d %H:%M UTC").to_string())
+}
+
 /// Build the SensorValue for System Uptime.
 ///
-/// The state is the raw seconds count as a JSON Number — required by HA's
-/// `state_class: total_increasing` + `device_class: duration` contract.
-/// The human-readable "1d 2h 3m" form is exposed as an attribute so it
-/// remains visible without breaking validation.
+/// State is a human-readable string ("4h 49m" / "1d 2h 3m"). We deliberately
+/// do NOT set `device_class: duration` + `state_class: total_increasing` +
+/// `unit_of_measurement: "s"` because that contract requires a numeric state,
+/// which would force HA's frontend to render "17,200.00 s" rather than the
+/// readable form. Numeric data is preserved in attributes for power-users.
 pub(crate) fn build_uptime_sensor(uptime_seconds: u64) -> SensorValue {
     let days = uptime_seconds / 86400;
     let hours = uptime_seconds / 3600;
@@ -60,16 +79,15 @@ pub(crate) fn build_uptime_sensor(uptime_seconds: u64) -> SensorValue {
     attributes.insert("days".into(), serde_json::json!(days));
     attributes.insert("hours".into(), serde_json::json!(hours));
     attributes.insert("minutes".into(), serde_json::json!(minutes));
-    attributes.insert("human".into(), serde_json::json!(human));
 
     SensorValue {
         unique_id: "system_uptime".into(),
         name: "System Uptime".into(),
-        state: serde_json::json!(uptime_seconds),
+        state: serde_json::json!(human),
         sensor_type: "sensor".into(),
-        device_class: Some("duration".into()),
-        unit_of_measurement: Some("s".into()),
-        state_class: Some("total_increasing".into()),
+        device_class: None,
+        unit_of_measurement: None,
+        state_class: None,
         icon: Some("mdi:clock-outline".into()),
         attributes,
         update_at_interval: true,
@@ -817,41 +835,54 @@ mod tests {
     }
 
     #[test]
-    fn build_uptime_sensor_state_is_numeric_seconds() {
-        let sensor = build_uptime_sensor(3725); // 1h 2m 5s
+    fn build_uptime_sensor_state_is_human_string() {
+        // 17381 = 4h 49m
+        let sensor = build_uptime_sensor(17381);
 
         match &sensor.state {
-            serde_json::Value::Number(n) => {
-                assert_eq!(n.as_u64(), Some(3725), "state must be the raw seconds count");
+            serde_json::Value::String(s) => {
+                assert_eq!(s, "4h 49m", "state must be human-readable");
             }
-            other => panic!("state must be a JSON Number, got {:?}", other),
+            other => panic!("state must be a JSON String, got {:?}", other),
         }
     }
 
     #[test]
-    fn build_uptime_sensor_metadata_matches_ha_duration_contract() {
-        let sensor = build_uptime_sensor(0);
+    fn build_uptime_sensor_state_with_days() {
+        // 1d 1h 1m
+        let sensor = build_uptime_sensor(90061);
+        assert_eq!(sensor.state, serde_json::json!("1d 1h 1m"));
+    }
+
+    #[test]
+    fn build_uptime_sensor_state_minutes_only() {
+        // 49m
+        let sensor = build_uptime_sensor(2940);
+        assert_eq!(sensor.state, serde_json::json!("0h 49m"));
+    }
+
+    #[test]
+    fn build_uptime_sensor_drops_numeric_contract() {
+        let sensor = build_uptime_sensor(3725);
 
         assert_eq!(sensor.unique_id, "system_uptime");
         assert_eq!(sensor.sensor_type, "sensor");
-        assert_eq!(sensor.device_class.as_deref(), Some("duration"));
-        assert_eq!(sensor.unit_of_measurement.as_deref(), Some("s"));
-        assert_eq!(sensor.state_class.as_deref(), Some("total_increasing"));
+        // Must NOT have numeric-only fields — they'd make HA reject our string state.
+        assert_eq!(sensor.device_class, None);
+        assert_eq!(sensor.state_class, None);
+        assert_eq!(sensor.unit_of_measurement, None);
         assert!(sensor.update_at_interval);
     }
 
     #[test]
-    fn build_uptime_sensor_attributes_contain_human_breakdown() {
+    fn build_uptime_sensor_keeps_numeric_data_in_attributes() {
         let sensor = build_uptime_sensor(90061); // 1d 1h 1m 1s
 
+        // Power users can still graph or use these in automations via attributes.
         assert_eq!(sensor.attributes.get("uptime_seconds"), Some(&serde_json::json!(90061)));
         assert_eq!(sensor.attributes.get("days"), Some(&serde_json::json!(1)));
-        assert_eq!(sensor.attributes.get("hours"), Some(&serde_json::json!(25))); // total hours
+        assert_eq!(sensor.attributes.get("hours"), Some(&serde_json::json!(25)));
         assert_eq!(sensor.attributes.get("minutes"), Some(&serde_json::json!(1)));
-        assert_eq!(
-            sensor.attributes.get("human"),
-            Some(&serde_json::json!("1d 1h 1m"))
-        );
     }
 
     #[test]
@@ -860,18 +891,26 @@ mod tests {
     }
 
     #[test]
-    fn build_last_boot_sensor_emits_iso_state_for_valid_timestamp() {
+    fn build_last_boot_sensor_emits_readable_state_for_valid_timestamp() {
         let sensor = build_last_boot_sensor(1779796800).expect("must be Some");
 
         assert_eq!(sensor.unique_id, "last_boot");
-        assert_eq!(sensor.device_class.as_deref(), Some("timestamp"));
+        // Drop device_class: timestamp — HA rejects ISO strings on that class
+        // and shows "unavailable". Plain string state always renders.
+        assert_eq!(sensor.device_class, None);
+        // Human-readable UTC date+time, no T-separator, with "UTC" suffix.
         assert_eq!(
             sensor.state,
-            serde_json::json!("2026-05-26T12:00:00+00:00"),
+            serde_json::json!("2026-05-26 12:00 UTC"),
         );
+        // Power users keep the ISO + epoch in attributes.
         assert_eq!(
             sensor.attributes.get("boot_timestamp"),
             Some(&serde_json::json!(1779796800u64)),
+        );
+        assert_eq!(
+            sensor.attributes.get("iso_utc"),
+            Some(&serde_json::json!("2026-05-26T12:00:00+00:00")),
         );
         assert!(!sensor.update_at_interval, "last_boot is static");
     }
