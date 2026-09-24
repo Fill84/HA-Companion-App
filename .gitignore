@@ -5,4 +5,10 @@ desktop-app/src-tauri/target/*
 desktop-app/dist/*
 .claude/*
 ha-integration/
+hwmon-helper/bin/
+hwmon-helper/obj/
+desktop-app/src-tauri/resources/hwmon/*
+!desktop-app/src-tauri/resources/hwmon/README.txt
+desktop-app/src-tauri/resources/hwmon-net10/*
+!desktop-app/src-tauri/resources/hwmon-net10/README.txt
 

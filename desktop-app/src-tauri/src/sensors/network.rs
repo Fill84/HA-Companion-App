@@ -19,18 +19,16 @@ pub fn collect() -> NetworkData {
     let networks = Networks::new_with_refreshed_list();
     let interfaces: Vec<NetworkInterface> = networks
         .iter()
-        .map(|(name, data)| {
-            NetworkInterface {
-                name: name.clone(),
-                mac_address: data.mac_address().to_string(),
-                received_bytes: data.total_received(),
-                transmitted_bytes: data.total_transmitted(),
-                ip_addresses: data
-                    .ip_networks()
-                    .iter()
-                    .map(|ip| ip.addr.to_string())
-                    .collect(),
-            }
+        .map(|(name, data)| NetworkInterface {
+            name: name.clone(),
+            mac_address: data.mac_address().to_string(),
+            received_bytes: data.total_received(),
+            transmitted_bytes: data.total_transmitted(),
+            ip_addresses: data
+                .ip_networks()
+                .iter()
+                .map(|ip| ip.addr.to_string())
+                .collect(),
         })
         .collect();
 

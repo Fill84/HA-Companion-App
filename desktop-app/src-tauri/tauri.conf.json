@@ -7,7 +7,7 @@
         "frontendDist": "../dist",
         "devUrl": "http://localhost:1420",
         "beforeDevCommand": "yarn run dev:server",
-        "beforeBuildCommand": "node build-web.js"
+        "beforeBuildCommand": "node build-desktop.js"
     },
     "app": {
         "withGlobalTauri": true,
@@ -23,13 +23,19 @@
             }
         ],
         "security": {
-            "csp": null
+            "csp": {
+                "default-src": "'self'",
+                "script-src": "'self'",
+                "style-src": "'self'",
+                "img-src": "'self' data:",
+                "font-src": "'self'",
+                "connect-src": "ipc: http://ipc.localhost"
+            }
         }
     },
     "bundle": {
         "active": true,
         "targets": "all",
-        "resources": ["drivers/WinRing0x64.sys"],
         "icon": [
             "icons/32x32.png",
             "icons/128x128.png",
@@ -42,8 +48,7 @@
                 "type": "downloadBootstrapper"
             },
             "nsis": {
-                "installMode": "both",
-                "installerHooks": "installer-hooks.nsh"
+                "installMode": "both"
             }
         }
     },

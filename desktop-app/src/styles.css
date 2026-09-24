@@ -71,6 +71,18 @@ body {
     display: none !important;
 }
 
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 /* ==============================================
    Setup screen — mirrors HA's <ha-authorize> layout:
    centered card, thin border + subtle shadow, large
@@ -81,12 +93,13 @@ body {
     width: 100vw;
     height: 100vh;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
     padding: var(--ha-space-5);
     background: var(--ha-bg);
     position: relative;
     z-index: 1; /* above tsparticles canvas (zIndex -1) but below modal */
+    overflow-y: auto;
 }
 
 /* HA layout: icon ABOVE card, card centered, footer below — all stacked.
@@ -98,6 +111,7 @@ body {
     gap: var(--ha-space-4);
     width: 100%;
     max-width: 420px;
+    margin: auto;
 }
 
 .setup-container {
@@ -374,13 +388,13 @@ body {
 }
 
 .btn-primary {
-    background: var(--ha-primary);
+    background: #006b9c;
     color: #ffffff;
     width: 100%;
 }
 
 .btn-primary:hover {
-    background: var(--ha-primary-dark);
+    background: #00567d;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 

@@ -4,7 +4,13 @@ use chrono::{SecondsFormat, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
+use super::temperature::TemperatureReader;
 use super::{battery, cpu, disk, gpu, memory, network, system_info};
+
+fn rounded(value: f64, decimal_places: i32) -> f64 {
+    let factor = 10_f64.powi(decimal_places);
+    (value * factor).round() / factor
+}
 
 /// Format a UNIX timestamp (seconds since 1970-01-01 UTC) as an RFC3339 string
 /// with a `+00:00` offset suffix. Returns `None` for the failure-mode value 0,
@@ -19,11 +25,7 @@ pub(crate) fn format_boot_time(timestamp: u64) -> Option<String> {
 
 /// Build the Last Boot SensorValue, or None when the boot time is unknown.
 ///
-/// State is a human-readable UTC date+time string (e.g. "2026-05-26 12:00 UTC").
-/// We deliberately do NOT set `device_class: timestamp` because the Python
-/// integration assigns our string directly to `_attr_native_value`, and HA's
-/// timestamp class then rejects the string and marks the entity unavailable.
-/// Raw ISO and epoch are kept in attributes for power-users / automations.
+/// State is RFC3339; the HA integration converts it to a datetime object.
 pub(crate) fn build_last_boot_sensor(boot_time: u64) -> Option<SensorValue> {
     let iso = format_boot_time(boot_time)?;
     let readable = format_boot_time_readable(boot_time)?;
@@ -31,13 +33,14 @@ pub(crate) fn build_last_boot_sensor(boot_time: u64) -> Option<SensorValue> {
     let mut attributes = HashMap::new();
     attributes.insert("boot_timestamp".into(), serde_json::json!(boot_time));
     attributes.insert("iso_utc".into(), serde_json::json!(iso));
+    attributes.insert("display_utc".into(), serde_json::json!(readable));
 
     Some(SensorValue {
         unique_id: "last_boot".into(),
         name: "Last Boot".into(),
-        state: serde_json::json!(readable),
+        state: serde_json::json!(iso),
         sensor_type: "sensor".into(),
-        device_class: None,
+        device_class: Some("timestamp".into()),
         unit_of_measurement: None,
         state_class: None,
         icon: Some("mdi:restart".into()),
@@ -58,11 +61,7 @@ pub(crate) fn format_boot_time_readable(timestamp: u64) -> Option<String> {
 
 /// Build the SensorValue for System Uptime.
 ///
-/// State is a human-readable string ("4h 49m" / "1d 2h 3m"). We deliberately
-/// do NOT set `device_class: duration` + `state_class: total_increasing` +
-/// `unit_of_measurement: "s"` because that contract requires a numeric state,
-/// which would force HA's frontend to render "17,200.00 s" rather than the
-/// readable form. Numeric data is preserved in attributes for power-users.
+/// Numeric seconds preserve HA duration semantics and statistics.
 pub(crate) fn build_uptime_sensor(uptime_seconds: u64) -> SensorValue {
     let days = uptime_seconds / 86400;
     let hours = uptime_seconds / 3600;
@@ -79,15 +78,16 @@ pub(crate) fn build_uptime_sensor(uptime_seconds: u64) -> SensorValue {
     attributes.insert("days".into(), serde_json::json!(days));
     attributes.insert("hours".into(), serde_json::json!(hours));
     attributes.insert("minutes".into(), serde_json::json!(minutes));
+    attributes.insert("human_readable".into(), serde_json::json!(human));
 
     SensorValue {
         unique_id: "system_uptime".into(),
         name: "System Uptime".into(),
-        state: serde_json::json!(human),
+        state: serde_json::json!(uptime_seconds),
         sensor_type: "sensor".into(),
-        device_class: None,
-        unit_of_measurement: None,
-        state_class: None,
+        device_class: Some("duration".into()),
+        unit_of_measurement: Some("s".into()),
+        state_class: Some("measurement".into()),
         icon: Some("mdi:clock-outline".into()),
         attributes,
         update_at_interval: true,
@@ -113,16 +113,21 @@ pub struct SensorValue {
 pub struct SensorCollector {
     sys: System,
     enabled_sensors: HashMap<String, bool>,
+    temperature: TemperatureReader,
 }
 
 impl SensorCollector {
     pub fn new(enabled_sensors: &HashMap<String, bool>) -> Self {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        let sys = System::new_with_specifics(
+            sysinfo::RefreshKind::new()
+                .with_cpu(sysinfo::CpuRefreshKind::everything())
+                .with_memory(sysinfo::MemoryRefreshKind::everything()),
+        );
 
         Self {
             sys,
             enabled_sensors: enabled_sensors.clone(),
+            temperature: TemperatureReader::new(None, false),
         }
     }
 
@@ -130,9 +135,20 @@ impl SensorCollector {
         *self.enabled_sensors.get(sensor_id).unwrap_or(&true)
     }
 
+    pub fn configure_temperature_provider(
+        &mut self,
+        path: Option<std::path::PathBuf>,
+        enabled: bool,
+    ) {
+        self.temperature = TemperatureReader::new(path, enabled);
+    }
+
+    pub fn set_temperature_provider(&mut self, enabled: bool) {
+        self.temperature.set_enabled(enabled);
+    }
+
     /// Collect all sensors (both static and dynamic) — used at startup
     pub fn collect_all(&mut self) -> Vec<SensorValue> {
-        self.sys.refresh_all();
         let mut sensors = Vec::new();
 
         sensors.extend(self.collect_static());
@@ -143,12 +159,36 @@ impl SensorCollector {
 
     /// Collect only dynamic sensors — used at interval
     pub fn collect_dynamic(&mut self) -> Vec<SensorValue> {
-        self.sys.refresh_all();
         let mut sensors = Vec::new();
 
+        let mut cpu_refresh = sysinfo::CpuRefreshKind::new();
+        if self.is_enabled("cpu_usage") {
+            cpu_refresh = cpu_refresh.with_cpu_usage();
+        }
+        if self.is_enabled("cpu_frequency") {
+            cpu_refresh = cpu_refresh.with_frequency();
+        }
+        if self.is_enabled("cpu_usage") || self.is_enabled("cpu_frequency") {
+            self.sys.refresh_cpu_specifics(cpu_refresh);
+        }
+        if self.is_enabled("memory_usage")
+            || self.is_enabled("memory_used")
+            || self.is_enabled("swap_usage")
+        {
+            self.sys.refresh_memory();
+        }
+        if self.is_enabled("process_count") {
+            self.sys.refresh_processes_specifics(
+                sysinfo::ProcessesToUpdate::All,
+                true,
+                sysinfo::ProcessRefreshKind::new(),
+            );
+        }
+
         // CPU sensors (dynamic) — collect once, reuse
-        let cpu_enabled =
-            self.is_enabled("cpu_usage") || self.is_enabled("cpu_frequency") || self.is_enabled("cpu_temperature");
+        let cpu_enabled = self.is_enabled("cpu_usage")
+            || self.is_enabled("cpu_frequency")
+            || self.is_enabled("cpu_temperature");
         if cpu_enabled {
             let cpu_data = cpu::collect(&self.sys);
 
@@ -156,7 +196,7 @@ impl SensorCollector {
                 sensors.push(SensorValue {
                     unique_id: "cpu_usage".into(),
                     name: "CPU Usage".into(),
-                    state: serde_json::json!(format!("{:.1}", cpu_data.usage_percent)),
+                    state: serde_json::json!(rounded(cpu_data.usage_percent as f64, 1)),
                     sensor_type: "sensor".into(),
                     device_class: None,
                     unit_of_measurement: Some("%".into()),
@@ -183,20 +223,17 @@ impl SensorCollector {
             }
 
             if self.is_enabled("cpu_temperature") {
-                let temp_state = match cpu_data.temperature {
-                    Some(temp) => serde_json::json!(format!("{:.1}", temp)),
-                    None => serde_json::json!(null),
-                };
+                let reading = self.temperature.read();
                 sensors.push(SensorValue {
                     unique_id: "cpu_temperature".into(),
                     name: "CPU Temperature".into(),
-                    state: temp_state,
+                    state: serde_json::json!(reading.value),
                     sensor_type: "sensor".into(),
                     device_class: Some("temperature".into()),
                     unit_of_measurement: Some("°C".into()),
                     state_class: Some("measurement".into()),
                     icon: Some("mdi:thermometer".into()),
-                    attributes: HashMap::new(),
+                    attributes: reading.attributes(),
                     update_at_interval: true,
                 });
             }
@@ -213,7 +250,7 @@ impl SensorCollector {
                 sensors.push(SensorValue {
                     unique_id: "memory_usage".into(),
                     name: "Memory Usage".into(),
-                    state: serde_json::json!(format!("{:.1}", mem_data.usage_percent)),
+                    state: serde_json::json!(rounded(mem_data.usage_percent as f64, 1)),
                     sensor_type: "sensor".into(),
                     device_class: None,
                     unit_of_measurement: Some("%".into()),
@@ -228,7 +265,7 @@ impl SensorCollector {
                 sensors.push(SensorValue {
                     unique_id: "memory_used".into(),
                     name: "Memory Used".into(),
-                    state: serde_json::json!(format!("{:.2}", mem_data.used_gb)),
+                    state: serde_json::json!(rounded(mem_data.used_gb, 2)),
                     sensor_type: "sensor".into(),
                     device_class: Some("data_size".into()),
                     unit_of_measurement: Some("GB".into()),
@@ -246,13 +283,13 @@ impl SensorCollector {
                 } else {
                     0.0
                 };
-                let swap_used_gb = mem_data.swap_used_bytes as f64 / 1_073_741_824.0;
-                let swap_total_gb = mem_data.swap_total_bytes as f64 / 1_073_741_824.0;
+                let swap_used_gb = mem_data.swap_used_bytes as f64 / 1_000_000_000.0;
+                let swap_total_gb = mem_data.swap_total_bytes as f64 / 1_000_000_000.0;
 
                 sensors.push(SensorValue {
                     unique_id: "swap_usage".into(),
                     name: "Swap Usage".into(),
-                    state: serde_json::json!(format!("{:.1}", swap_usage_pct)),
+                    state: serde_json::json!(rounded(swap_usage_pct as f64, 1)),
                     sensor_type: "sensor".into(),
                     device_class: None,
                     unit_of_measurement: Some("%".into()),
@@ -260,8 +297,14 @@ impl SensorCollector {
                     icon: Some("mdi:swap-horizontal".into()),
                     attributes: {
                         let mut attrs = HashMap::new();
-                        attrs.insert("swap_used_gb".into(), serde_json::json!(format!("{:.2}", swap_used_gb)));
-                        attrs.insert("swap_total_gb".into(), serde_json::json!(format!("{:.1}", swap_total_gb)));
+                        attrs.insert(
+                            "swap_used_gb".into(),
+                            serde_json::json!(rounded(swap_used_gb, 2)),
+                        );
+                        attrs.insert(
+                            "swap_total_gb".into(),
+                            serde_json::json!(rounded(swap_total_gb, 1)),
+                        );
                         attrs
                     },
                     update_at_interval: true,
@@ -282,7 +325,7 @@ impl SensorCollector {
                 sensors.push(SensorValue {
                     unique_id: format!("disk_usage_{}", safe_name),
                     name: format!("Disk Usage {}", partition.mount_point),
-                    state: serde_json::json!(format!("{:.1}", partition.usage_percent)),
+                    state: serde_json::json!(rounded(partition.usage_percent as f64, 1)),
                     sensor_type: "sensor".into(),
                     device_class: None,
                     unit_of_measurement: Some("%".into()),
@@ -292,15 +335,17 @@ impl SensorCollector {
                         let mut attrs = HashMap::new();
                         attrs.insert(
                             "total_gb".into(),
-                            serde_json::json!(
-                                format!("{:.1}", partition.total_bytes as f64 / 1_073_741_824.0)
-                            ),
+                            serde_json::json!(format!(
+                                "{:.1}",
+                                partition.total_bytes as f64 / 1_000_000_000.0
+                            )),
                         );
                         attrs.insert(
                             "used_gb".into(),
-                            serde_json::json!(
-                                format!("{:.1}", partition.used_bytes as f64 / 1_073_741_824.0)
-                            ),
+                            serde_json::json!(format!(
+                                "{:.1}",
+                                partition.used_bytes as f64 / 1_000_000_000.0
+                            )),
                         );
                         attrs.insert("filesystem".into(), serde_json::json!(partition.filesystem));
                         attrs.insert("disk_type".into(), serde_json::json!(partition.disk_type));
@@ -324,8 +369,15 @@ impl SensorCollector {
                 if let Some(usage) = gpu_info.usage_percent {
                     sensors.push(SensorValue {
                         unique_id: format!("gpu_usage{}", suffix),
-                        name: format!("GPU Usage{}", if suffix.is_empty() { "".to_string() } else { format!(" {}", i) }),
-                        state: serde_json::json!(format!("{:.1}", usage)),
+                        name: format!(
+                            "GPU Usage{}",
+                            if suffix.is_empty() {
+                                "".to_string()
+                            } else {
+                                format!(" {}", i)
+                            }
+                        ),
+                        state: serde_json::json!(rounded(usage as f64, 1)),
                         sensor_type: "sensor".into(),
                         device_class: None,
                         unit_of_measurement: Some("%".into()),
@@ -339,8 +391,15 @@ impl SensorCollector {
                 if let Some(temp) = gpu_info.temperature {
                     sensors.push(SensorValue {
                         unique_id: format!("gpu_temperature{}", suffix),
-                        name: format!("GPU Temperature{}", if suffix.is_empty() { "".to_string() } else { format!(" {}", i) }),
-                        state: serde_json::json!(format!("{:.1}", temp)),
+                        name: format!(
+                            "GPU Temperature{}",
+                            if suffix.is_empty() {
+                                "".to_string()
+                            } else {
+                                format!(" {}", i)
+                            }
+                        ),
+                        state: serde_json::json!(rounded(temp as f64, 1)),
                         sensor_type: "sensor".into(),
                         device_class: Some("temperature".into()),
                         unit_of_measurement: Some("°C".into()),
@@ -354,8 +413,15 @@ impl SensorCollector {
                 if let Some(vram_used) = gpu_info.vram_used_mb {
                     sensors.push(SensorValue {
                         unique_id: format!("gpu_vram_used{}", suffix),
-                        name: format!("GPU VRAM Used{}", if suffix.is_empty() { "".to_string() } else { format!(" {}", i) }),
-                        state: serde_json::json!(format!("{:.0}", vram_used)),
+                        name: format!(
+                            "GPU VRAM Used{}",
+                            if suffix.is_empty() {
+                                "".to_string()
+                            } else {
+                                format!(" {}", i)
+                            }
+                        ),
+                        state: serde_json::json!(rounded(vram_used as f64, 0)),
                         sensor_type: "sensor".into(),
                         device_class: Some("data_size".into()),
                         unit_of_measurement: Some("MB".into()),
@@ -385,10 +451,7 @@ impl SensorCollector {
                     attributes: {
                         let mut attrs = HashMap::new();
                         attrs.insert("mac_address".into(), serde_json::json!(iface.mac_address));
-                        attrs.insert(
-                            "ip_addresses".into(),
-                            serde_json::json!(iface.ip_addresses),
-                        );
+                        attrs.insert("ip_addresses".into(), serde_json::json!(iface.ip_addresses));
                         attrs
                     },
                     update_at_interval: true,
@@ -421,8 +484,15 @@ impl SensorCollector {
 
                 sensors.push(SensorValue {
                     unique_id: format!("battery_level{}", suffix),
-                    name: format!("Battery Level{}", if suffix.is_empty() { "".to_string() } else { format!(" {}", i) }),
-                    state: serde_json::json!(format!("{:.0}", bat.percentage)),
+                    name: format!(
+                        "Battery Level{}",
+                        if suffix.is_empty() {
+                            "".to_string()
+                        } else {
+                            format!(" {}", i)
+                        }
+                    ),
+                    state: serde_json::json!(rounded(bat.percentage as f64, 0)),
                     sensor_type: "sensor".into(),
                     device_class: Some("battery".into()),
                     unit_of_measurement: Some("%".into()),
@@ -447,7 +517,14 @@ impl SensorCollector {
 
                 sensors.push(SensorValue {
                     unique_id: format!("battery_charging{}", suffix),
-                    name: format!("Battery Charging{}", if suffix.is_empty() { "".to_string() } else { format!(" {}", i) }),
+                    name: format!(
+                        "Battery Charging{}",
+                        if suffix.is_empty() {
+                            "".to_string()
+                        } else {
+                            format!(" {}", i)
+                        }
+                    ),
                     state: serde_json::json!(bat.is_charging),
                     sensor_type: "binary_sensor".into(),
                     device_class: Some("battery_charging".into()),
@@ -462,7 +539,7 @@ impl SensorCollector {
 
         // System uptime & process count (dynamic)
         if self.is_enabled("system_uptime") || self.is_enabled("process_count") {
-            let dyn_info = system_info::collect_dynamic();
+            let dyn_info = system_info::collect_dynamic(&self.sys);
 
             if self.is_enabled("system_uptime") {
                 sensors.push(build_uptime_sensor(dyn_info.uptime_seconds));
@@ -644,9 +721,7 @@ impl SensorCollector {
             if let Some(sensor) = build_last_boot_sensor(sys_info.boot_time) {
                 sensors.push(sensor);
             } else {
-                log::warn!(
-                    "[SystemInfo] boot_time is 0 — skipping Last Boot sensor"
-                );
+                log::warn!("[SystemInfo] boot_time is 0 — skipping Last Boot sensor");
             }
         }
 
@@ -679,7 +754,14 @@ impl SensorCollector {
 
                 sensors.push(SensorValue {
                     unique_id: format!("display_resolution{}", suffix),
-                    name: format!("Display Resolution{}", if suffix.is_empty() { "".to_string() } else { format!(" {}", i + 1) }),
+                    name: format!(
+                        "Display Resolution{}",
+                        if suffix.is_empty() {
+                            "".to_string()
+                        } else {
+                            format!(" {}", i + 1)
+                        }
+                    ),
                     state: serde_json::json!(display.resolution),
                     sensor_type: "sensor".into(),
                     device_class: None,
@@ -711,7 +793,14 @@ impl SensorCollector {
 
                 sensors.push(SensorValue {
                     unique_id: format!("gpu_model{}", suffix),
-                    name: format!("GPU Model{}", if suffix.is_empty() { "".to_string() } else { format!(" {}", i) }),
+                    name: format!(
+                        "GPU Model{}",
+                        if suffix.is_empty() {
+                            "".to_string()
+                        } else {
+                            format!(" {}", i)
+                        }
+                    ),
                     state: serde_json::json!(gpu_info.name),
                     sensor_type: "sensor".into(),
                     device_class: None,
@@ -740,7 +829,7 @@ impl SensorCollector {
             sensors.push(SensorValue {
                 unique_id: "memory_total".into(),
                 name: "Memory Total".into(),
-                state: serde_json::json!(format!("{:.1}", mem_data.total_gb)),
+                state: serde_json::json!(rounded(mem_data.total_gb, 1)),
                 sensor_type: "sensor".into(),
                 device_class: Some("data_size".into()),
                 unit_of_measurement: Some("GB".into()),
@@ -795,6 +884,9 @@ impl SensorCollector {
 
     /// Update enabled sensors map
     pub fn set_enabled_sensors(&mut self, enabled: HashMap<String, bool>) {
+        if enabled.get("cpu_temperature") == Some(&false) {
+            self.temperature.suspend();
+        }
         self.enabled_sensors = enabled;
     }
 }
@@ -810,6 +902,24 @@ pub struct SensorListItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn disabled_temperature_provider_clears_the_existing_entity_value() {
+        let mut collector = SensorCollector::new(&HashMap::new());
+        let mut enabled: HashMap<String, bool> = collector
+            .get_sensor_list()
+            .into_iter()
+            .map(|sensor| (sensor.id, false))
+            .collect();
+        enabled.insert("cpu_temperature".into(), true);
+        collector.set_enabled_sensors(enabled);
+        let snapshot = collector.collect_dynamic();
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].unique_id, "cpu_temperature");
+        assert!(snapshot[0].state.is_null());
+        assert_eq!(snapshot[0].attributes["provider_status"], "disabled");
+    }
 
     #[test]
     fn format_boot_time_returns_iso_for_known_epoch() {
@@ -835,42 +945,39 @@ mod tests {
     }
 
     #[test]
-    fn build_uptime_sensor_state_is_human_string() {
+    fn build_uptime_sensor_state_is_numeric_seconds() {
         // 17381 = 4h 49m
         let sensor = build_uptime_sensor(17381);
 
-        match &sensor.state {
-            serde_json::Value::String(s) => {
-                assert_eq!(s, "4h 49m", "state must be human-readable");
-            }
-            other => panic!("state must be a JSON String, got {:?}", other),
-        }
+        assert_eq!(sensor.state, serde_json::json!(17381));
+        assert_eq!(sensor.attributes["human_readable"], "4h 49m");
     }
 
     #[test]
     fn build_uptime_sensor_state_with_days() {
         // 1d 1h 1m
         let sensor = build_uptime_sensor(90061);
-        assert_eq!(sensor.state, serde_json::json!("1d 1h 1m"));
+        assert_eq!(sensor.state, serde_json::json!(90061));
+        assert_eq!(sensor.attributes["human_readable"], "1d 1h 1m");
     }
 
     #[test]
     fn build_uptime_sensor_state_minutes_only() {
         // 49m
         let sensor = build_uptime_sensor(2940);
-        assert_eq!(sensor.state, serde_json::json!("0h 49m"));
+        assert_eq!(sensor.state, serde_json::json!(2940));
+        assert_eq!(sensor.attributes["human_readable"], "0h 49m");
     }
 
     #[test]
-    fn build_uptime_sensor_drops_numeric_contract() {
+    fn build_uptime_sensor_declares_numeric_contract() {
         let sensor = build_uptime_sensor(3725);
 
         assert_eq!(sensor.unique_id, "system_uptime");
         assert_eq!(sensor.sensor_type, "sensor");
-        // Must NOT have numeric-only fields — they'd make HA reject our string state.
-        assert_eq!(sensor.device_class, None);
-        assert_eq!(sensor.state_class, None);
-        assert_eq!(sensor.unit_of_measurement, None);
+        assert_eq!(sensor.device_class.as_deref(), Some("duration"));
+        assert_eq!(sensor.state_class.as_deref(), Some("measurement"));
+        assert_eq!(sensor.unit_of_measurement.as_deref(), Some("s"));
         assert!(sensor.update_at_interval);
     }
 
@@ -879,10 +986,16 @@ mod tests {
         let sensor = build_uptime_sensor(90061); // 1d 1h 1m 1s
 
         // Power users can still graph or use these in automations via attributes.
-        assert_eq!(sensor.attributes.get("uptime_seconds"), Some(&serde_json::json!(90061)));
+        assert_eq!(
+            sensor.attributes.get("uptime_seconds"),
+            Some(&serde_json::json!(90061))
+        );
         assert_eq!(sensor.attributes.get("days"), Some(&serde_json::json!(1)));
         assert_eq!(sensor.attributes.get("hours"), Some(&serde_json::json!(25)));
-        assert_eq!(sensor.attributes.get("minutes"), Some(&serde_json::json!(1)));
+        assert_eq!(
+            sensor.attributes.get("minutes"),
+            Some(&serde_json::json!(1))
+        );
     }
 
     #[test]
@@ -891,18 +1004,12 @@ mod tests {
     }
 
     #[test]
-    fn build_last_boot_sensor_emits_readable_state_for_valid_timestamp() {
+    fn build_last_boot_sensor_emits_timestamp_contract() {
         let sensor = build_last_boot_sensor(1779796800).expect("must be Some");
 
         assert_eq!(sensor.unique_id, "last_boot");
-        // Drop device_class: timestamp — HA rejects ISO strings on that class
-        // and shows "unavailable". Plain string state always renders.
-        assert_eq!(sensor.device_class, None);
-        // Human-readable UTC date+time, no T-separator, with "UTC" suffix.
-        assert_eq!(
-            sensor.state,
-            serde_json::json!("2026-05-26 12:00 UTC"),
-        );
+        assert_eq!(sensor.device_class.as_deref(), Some("timestamp"));
+        assert_eq!(sensor.state, serde_json::json!("2026-05-26T12:00:00+00:00"),);
         // Power users keep the ISO + epoch in attributes.
         assert_eq!(
             sensor.attributes.get("boot_timestamp"),

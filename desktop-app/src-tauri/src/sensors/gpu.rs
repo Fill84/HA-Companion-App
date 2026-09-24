@@ -75,13 +75,10 @@ fn collect_nvidia() -> Option<Vec<GpuInfo>> {
                 .temperature(nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu)
                 .ok()
                 .map(|t| t as f32);
-            let utilization = device
-                .utilization_rates()
-                .ok()
-                .map(|u| u.gpu as f32);
+            let utilization = device.utilization_rates().ok().map(|u| u.gpu as f32);
             let memory = device.memory_info().ok();
-            let vram_total = memory.as_ref().map(|m| m.total / 1_048_576);
-            let vram_used = memory.as_ref().map(|m| m.used / 1_048_576);
+            let vram_total = memory.as_ref().map(|m| m.total / 1_000_000);
+            let vram_used = memory.as_ref().map(|m| m.used / 1_000_000);
             let driver_version = nvml.sys_driver_version().ok();
 
             gpus.push(GpuInfo {
@@ -122,17 +119,18 @@ fn collect_wmi() -> Option<Vec<GpuInfo>> {
             _ => "Unknown GPU".to_string(),
         };
 
-        let vendor = if name.to_lowercase().contains("amd") || name.to_lowercase().contains("radeon") {
-            "AMD".to_string()
-        } else if name.to_lowercase().contains("intel") {
-            "Intel".to_string()
-        } else {
-            "Unknown".to_string()
-        };
+        let vendor =
+            if name.to_lowercase().contains("amd") || name.to_lowercase().contains("radeon") {
+                "AMD".to_string()
+            } else if name.to_lowercase().contains("intel") {
+                "Intel".to_string()
+            } else {
+                "Unknown".to_string()
+            };
 
         let vram_total = match result.get("AdapterRAM") {
-            Some(wmi::Variant::UI4(v)) => Some(*v as u64 / 1_048_576),
-            Some(wmi::Variant::I4(v)) => Some(*v as u64 / 1_048_576),
+            Some(wmi::Variant::UI4(v)) => Some(*v as u64 / 1_000_000),
+            Some(wmi::Variant::I4(v)) => Some(*v as u64 / 1_000_000),
             _ => None,
         };
 
@@ -174,7 +172,12 @@ fn collect_linux() -> Option<Vec<GpuInfo>> {
             let stdout = String::from_utf8_lossy(&output.stdout);
             // Basic parsing of rocm-smi output
             if let Some(name) = stdout.lines().find(|l| l.contains("Card series")) {
-                let gpu_name = name.split(':').last().unwrap_or("AMD GPU").trim().to_string();
+                let gpu_name = name
+                    .split(':')
+                    .last()
+                    .unwrap_or("AMD GPU")
+                    .trim()
+                    .to_string();
                 gpus.push(GpuInfo {
                     name: gpu_name,
                     vendor: "AMD".to_string(),
@@ -256,7 +259,7 @@ fn collect_macos() -> Option<Vec<GpuInfo>> {
             vendor,
             usage_percent: None,
             temperature: None,
-            vram_total_mb: vram.map(|v| v * 1024), // Convert GB to MB
+            vram_total_mb: vram.map(|v| v * 1000), // Decimal GB to MB
             vram_used_mb: None,
             driver_version: None,
         });

@@ -28,26 +28,24 @@ fn collect_batteries() -> Vec<BatteryInfo> {
 
     let mut batteries = Vec::new();
     if let Ok(battery_iter) = manager.batteries() {
-        for battery_result in battery_iter {
-            if let Ok(battery) = battery_result {
-                let state = match battery.state() {
-                    battery::State::Charging => "Charging",
-                    battery::State::Discharging => "Discharging",
-                    battery::State::Full => "Full",
-                    battery::State::Empty => "Empty",
-                    _ => "Unknown",
-                };
+        for battery in battery_iter.flatten() {
+            let state = match battery.state() {
+                battery::State::Charging => "Charging",
+                battery::State::Discharging => "Discharging",
+                battery::State::Full => "Full",
+                battery::State::Empty => "Empty",
+                _ => "Unknown",
+            };
 
-                let is_charging = matches!(battery.state(), battery::State::Charging);
+            let is_charging = matches!(battery.state(), battery::State::Charging);
 
-                batteries.push(BatteryInfo {
-                    percentage: battery.state_of_charge().value * 100.0,
-                    state: state.to_string(),
-                    state_of_health: Some(battery.state_of_health().value * 100.0),
-                    cycle_count: battery.cycle_count(),
-                    is_charging,
-                });
-            }
+            batteries.push(BatteryInfo {
+                percentage: battery.state_of_charge().value * 100.0,
+                state: state.to_string(),
+                state_of_health: Some(battery.state_of_health().value * 100.0),
+                cycle_count: battery.cycle_count(),
+                is_charging,
+            });
         }
     }
 

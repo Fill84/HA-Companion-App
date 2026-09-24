@@ -2,6 +2,10 @@
  * Main frontend logic for Home Assistant Companion
  * Handles app initialization, setup form, tray events
  */
+let setupBusy = false;
+let initialSettings = null;
+let savedTokenInvalid = false;
+
 
 /**
  * Show the setup screen. Optional reason: "webhook_dead" | "unreachable" | null.
@@ -13,12 +17,19 @@ function showSetupScreen(reason) {
     const bannerText = document.getElementById("setup-banner-text");
     if (banner && bannerText) {
         if (reason === "webhook_dead") {
+            bannerText.setAttribute("data-i18n", "setup_banner_webhook_dead");
             bannerText.textContent = t("setup_banner_webhook_dead");
             banner.classList.remove("hidden");
         } else if (reason === "unreachable") {
+            bannerText.setAttribute("data-i18n", "setup_banner_unreachable");
             bannerText.textContent = t("setup_banner_unreachable");
             banner.classList.remove("hidden");
+        } else if (reason === "token_invalid") {
+            bannerText.setAttribute("data-i18n", "setup_banner_token_invalid");
+            bannerText.textContent = t("setup_banner_token_invalid");
+            banner.classList.remove("hidden");
         } else if (reason === "default") {
+            bannerText.setAttribute("data-i18n", "setup_banner_default");
             bannerText.textContent = t("setup_banner_default");
             banner.classList.remove("hidden");
         } else {
@@ -42,6 +53,8 @@ function hideSetupScreen() {
  */
 async function handleSetup(e) {
     e.preventDefault();
+    if (setupBusy) return;
+    setupBusy = true;
 
     const serverUrl = document.getElementById("setup-server-url").value.trim();
     const token = document.getElementById("setup-token").value.trim();
@@ -52,41 +65,55 @@ async function handleSetup(e) {
     loadingEl.classList.remove("hidden");
 
     try {
+        if (!serverUrl || (!token && !canReuseSavedToken(serverUrl))) {
+            throw new Error(t("error_token"));
+        }
         // Save settings first
         await window.__TAURI__.core.invoke("save_settings", {
             serverUrl: serverUrl,
             accessToken: token,
-            updateInterval: 60,
+            updateInterval: initialSettings?.update_interval || 60,
             language: currentLanguage,
-            autostart: false,
+            autostart: initialSettings?.autostart || false,
         });
 
         // Register device
         await window.__TAURI__.core.invoke("register_device");
 
         // Success — open HA dashboard as child webview overlay
-        hideSetupScreen();
         await window.__TAURI__.core.invoke("load_dashboard");
+        hideSetupScreen();
     } catch (err) {
         errorEl.textContent = err.toString();
         errorEl.classList.remove("hidden");
     } finally {
+        setupBusy = false;
         loadingEl.classList.add("hidden");
     }
 }
 
 /**
- * Show the setup screen pre-filled with the previously entered credentials
- * (used after a registration loss — the user's URL and token are usually fine,
- * only the HA-side webhook was lost).
+ * Restore the server URL after registration loss. The token stays inside Rust;
+ * an empty input means reuse only when the server URL is unchanged.
  */
 function prefillSetupFromSettings(settings) {
     if (settings && settings.server_url) {
         document.getElementById("setup-server-url").value = settings.server_url;
     }
-    if (settings && settings.access_token) {
-        document.getElementById("setup-token").value = settings.access_token;
-    }
+    document.getElementById("setup-token").value = "";
+    updateSetupTokenRequirement();
+}
+
+function canReuseSavedToken(url) {
+    return !savedTokenInvalid && initialSettings?.has_access_token && url === initialSettings.server_url;
+}
+
+function updateSetupTokenRequirement() {
+    const url = document.getElementById("setup-server-url").value.trim();
+    const tokenInput = document.getElementById("setup-token");
+    const canReuse = canReuseSavedToken(url);
+    tokenInput.required = !canReuse;
+    tokenInput.placeholder = canReuse ? t("keep_existing_token") : t("enter_new_token");
 }
 
 /**
@@ -99,6 +126,7 @@ async function initApp() {
     try {
         // Get current settings
         const settings = await window.__TAURI__.core.invoke("get_settings");
+        initialSettings = settings;
 
         // Set language
         setLanguage(settings.language || "en");
@@ -106,7 +134,7 @@ async function initApp() {
         const setupLang = document.getElementById("setup-language");
         if (setupLang) setupLang.value = lang;
 
-        if (!settings.server_url || !settings.access_token) {
+        if (!settings.server_url || !settings.has_access_token) {
             // No config — show setup wizard, no banner.
             showSetupScreen(null);
             return;
@@ -139,6 +167,10 @@ async function initApp() {
         prefillSetupFromSettings(settings);
         if (statusName === "webhook_dead") {
             showSetupScreen("webhook_dead");
+        } else if (statusName === "token_invalid") {
+            savedTokenInvalid = true;
+            updateSetupTokenRequirement();
+            showSetupScreen("token_invalid");
         } else if (statusName === "unreachable") {
             showSetupScreen("unreachable");
         } else if (statusName === "not_registered") {
@@ -158,6 +190,7 @@ async function initApp() {
 document.addEventListener("DOMContentLoaded", () => {
     // Setup form
     document.getElementById("setup-form").addEventListener("submit", handleSetup);
+    document.getElementById("setup-server-url").addEventListener("input", updateSetupTokenRequirement);
 
     // Language picker in the setup footer — live-changes the UI strings.
     // Persistence happens on next save_settings call (e.g. when the user

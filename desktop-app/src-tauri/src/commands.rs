@@ -3,22 +3,25 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State};
+use tauri_plugin_autostart::ManagerExt as _;
 
 use crate::ha_client::normalize_server_url;
-use reqwest::Client;
 use crate::sensors::collector::SensorListItem;
 use crate::AppState;
+use reqwest::Client;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsResponse {
     pub server_url: String,
-    pub access_token: String,
-    pub webhook_id: Option<String>,
+    pub has_access_token: bool,
+    pub webhook_id_preview: Option<String>,
     pub device_id: String,
     pub update_interval: u64,
     pub language: String,
     pub enabled_sensors: HashMap<String, bool>,
     pub autostart: bool,
+    pub cpu_temperature_provider: bool,
+    pub cpu_temperature_provider_supported: bool,
     pub is_registered: bool,
 }
 
@@ -30,19 +33,28 @@ pub async fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsRes
 
     Ok(SettingsResponse {
         server_url: settings.server_url.clone(),
-        access_token: settings.access_token.clone(),
-        webhook_id: settings.webhook_id.clone(),
+        has_access_token: !settings.access_token.is_empty(),
+        webhook_id_preview: settings.webhook_id.as_ref().map(|id| {
+            let prefix: String = id.chars().take(8).collect();
+            format!("{prefix}…")
+        }),
         device_id: settings.device_id.clone(),
         update_interval: settings.update_interval,
         language: settings.language.clone(),
         enabled_sensors: settings.enabled_sensors.clone(),
         autostart: settings.autostart,
+        cpu_temperature_provider: settings.cpu_temperature_provider,
+        cpu_temperature_provider_supported: cfg!(windows),
         is_registered,
     })
 }
 
 /// Save settings and reinitialize connection
 #[tauri::command]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Preserve named IPC fields for existing setup callers"
+)]
 pub async fn save_settings(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
@@ -51,42 +63,154 @@ pub async fn save_settings(
     update_interval: u64,
     language: String,
     autostart: bool,
+    cpu_temperature_provider: Option<bool>,
+    enabled_sensors: Option<HashMap<String, bool>>,
 ) -> Result<(), String> {
     let server_url = normalize_server_url(&server_url);
-    let access_token = access_token.trim().to_string();
+    let submitted_token = access_token.trim();
+    let parsed_url =
+        url::Url::parse(&server_url).map_err(|_| "Enter a valid Home Assistant URL".to_string())?;
+    if !matches!(parsed_url.scheme(), "http" | "https")
+        || parsed_url.host_str().is_none()
+        || !parsed_url.username().is_empty()
+        || parsed_url.password().is_some()
+        || parsed_url.query().is_some()
+        || parsed_url.fragment().is_some()
+    {
+        return Err("Home Assistant URL must use HTTP(S) without embedded credentials".into());
+    }
+    if !(5..=3600).contains(&update_interval) {
+        return Err("Update interval must be between 5 and 3600 seconds".into());
+    }
 
     let mut settings = state.settings.lock().await;
+    let access_token = resolve_access_token(&settings, &server_url, submitted_token)?;
     let url_changed = settings.server_url != server_url;
     let token_changed = settings.access_token != access_token;
-
-    settings.server_url = server_url.clone();
-    settings.access_token = access_token.clone();
-    settings.update_interval = update_interval;
-    settings.language = language;
-    settings.autostart = autostart;
-
-    if let Err(e) = settings.save(&app) {
+    let preferences_changed = enabled_sensors
+        .as_ref()
+        .is_some_and(|preferences| preferences != &settings.enabled_sensors);
+    let mut next = settings.clone();
+    next.server_url = server_url.clone();
+    next.access_token = access_token.clone();
+    next.update_interval = update_interval;
+    next.language = language;
+    next.autostart = autostart;
+    if let Some(enabled) = cpu_temperature_provider {
+        next.cpu_temperature_provider = enabled && cfg!(windows);
+    }
+    if let Some(preferences) = enabled_sensors {
+        next.enabled_sensors = preferences;
+    }
+    if url_changed || token_changed {
+        next.webhook_id = None;
+    }
+    let autostart_changed = next.autostart != settings.autostart;
+    if autostart_changed {
+        let result = if next.autostart {
+            app.autolaunch().enable()
+        } else {
+            app.autolaunch().disable()
+        };
+        result.map_err(|e| format!("Could not update system autostart: {e}"))?;
+    }
+    if let Err(e) = next.save(&app) {
+        if autostart_changed {
+            let _ = if settings.autostart {
+                app.autolaunch().enable()
+            } else {
+                app.autolaunch().disable()
+            };
+        }
         log::error!("[HA] Save settings failed: {}", e);
         return Err(e);
     }
+    *settings = next;
+    {
+        let mut collector = state.collector.lock().await;
+        collector.set_temperature_provider(settings.cpu_temperature_provider);
+        collector.set_enabled_sensors(settings.enabled_sensors.clone());
+    }
 
     // If server URL or token changed, re-register
-    if url_changed || token_changed {
+    {
         let mut ha_client = state.ha_client.lock().await;
-        ha_client.update_config(server_url, access_token);
-
-        // Clear registration status - will re-register on next cycle
-        if settings.webhook_id.is_some() {
-            settings.webhook_id = None;
+        ha_client.set_update_interval(settings.update_interval);
+        if url_changed || token_changed {
+            ha_client.update_config(server_url, access_token);
+            ha_client.clear_webhook_id();
             *state.is_registered.lock().await = false;
-            if let Err(e) = settings.save(&app) {
-                log::error!("[HA] Save settings failed: {}", e);
-                return Err(e);
-            }
         }
     }
 
+    drop(settings);
+    if preferences_changed && !url_changed && !token_changed {
+        sync_all_sensors(state.inner().clone(), &app).await?;
+    }
+
     Ok(())
+}
+
+async fn sync_all_sensors(state: Arc<AppState>, app: &tauri::AppHandle) -> Result<(), String> {
+    if !*state.is_registered.lock().await {
+        return Ok(());
+    }
+    let sensors = crate::collect_snapshot(state.clone(), true).await?;
+    let client = state.ha_client.lock().await;
+    let result = async {
+        client.register_sensors(&sensors).await?;
+        client.update_sensors(&sensors, "all").await
+    }
+    .await;
+    if let Err(error) = result {
+        let reason = error.to_string();
+        drop(client);
+        if reason.contains("404") || reason.contains("410") {
+            mark_unregistered(&state, app, &reason).await;
+        }
+        return Err(format!(
+            "Settings saved, but Home Assistant sensor sync failed: {reason}"
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_access_token(
+    current: &crate::settings::AppSettings,
+    server_url: &str,
+    submitted_token: &str,
+) -> Result<String, String> {
+    if !submitted_token.is_empty() {
+        return Ok(submitted_token.to_string());
+    }
+    if current.server_url == server_url && !current.access_token.is_empty() {
+        return Ok(current.access_token.clone());
+    }
+    Err("Enter a token for this Home Assistant server".into())
+}
+
+#[cfg(test)]
+mod settings_contract_tests {
+    use super::resolve_access_token;
+    use crate::settings::AppSettings;
+
+    #[test]
+    fn blank_token_reuses_only_for_same_server() {
+        let current = AppSettings {
+            server_url: "https://ha.example".into(),
+            access_token: "saved-secret".into(),
+            ..AppSettings::default()
+        };
+        assert_eq!(
+            resolve_access_token(&current, "https://ha.example", "").unwrap(),
+            "saved-secret"
+        );
+        assert!(resolve_access_token(&current, "https://other.example", "").is_err());
+        assert_eq!(
+            resolve_access_token(&current, "https://other.example", "new-secret").unwrap(),
+            "new-secret"
+        );
+    }
 }
 
 /// Register device with HA
@@ -94,20 +218,15 @@ pub async fn save_settings(
 pub async fn register_device(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
-) -> Result<String, String> {
+) -> Result<(), String> {
     let mut settings = state.settings.lock().await;
     let mut ha_client = state.ha_client.lock().await;
     let mut collector = state.collector.lock().await;
 
-    let webhook_id = match crate::registration::register_device(
-        &mut settings,
-        &mut ha_client,
-        &mut collector,
-        &app,
-    )
-    .await
+    match crate::registration::register_device(&mut settings, &mut ha_client, &mut collector, &app)
+        .await
     {
-        Ok(id) => id,
+        Ok(_) => (),
         Err(e) => {
             log::error!("[HA] Registration failed: {}", e);
             return Err(e);
@@ -116,12 +235,14 @@ pub async fn register_device(
 
     *state.is_registered.lock().await = true;
 
-    Ok(webhook_id)
+    Ok(())
 }
 
 /// Get list of all sensors
 #[tauri::command]
-pub async fn get_sensor_list(state: State<'_, Arc<AppState>>) -> Result<Vec<SensorListItem>, String> {
+pub async fn get_sensor_list(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<SensorListItem>, String> {
     let collector = state.collector.lock().await;
     Ok(collector.get_sensor_list())
 }
@@ -138,13 +259,10 @@ pub async fn update_sensors_now(
         return Err("Device not registered".to_string());
     }
 
-    let sensor_data = {
-        let mut collector = state.collector.lock().await;
-        collector.collect_dynamic()
-    };
+    let sensor_data = crate::collect_snapshot(state.inner().clone(), false).await?;
 
     let ha_client = state.ha_client.lock().await;
-    if let Err(e) = ha_client.update_sensors(&sensor_data).await {
+    if let Err(e) = ha_client.update_sensors(&sensor_data, "dynamic").await {
         let err_str = e.to_string();
         log::error!("[HA] Update sensors failed: {}", err_str);
         drop(ha_client);
@@ -164,7 +282,7 @@ pub async fn update_sensors_now(
 pub async fn reregister_device(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
-) -> Result<String, String> {
+) -> Result<(), String> {
     // Drop in-memory + persisted webhook so register_device starts fresh.
     let (server_url, access_token) = {
         let mut settings = state.settings.lock().await;
@@ -233,15 +351,19 @@ pub async fn check_connection(
         return Ok(ConnectionStatus::NotRegistered);
     }
 
-    if ha_client.check_webhook().await {
-        return Ok(ConnectionStatus::Ok);
+    match ha_client.check_webhook().await {
+        Ok(()) => Ok(ConnectionStatus::Ok),
+        Err(error) => {
+            let reason = error.to_string();
+            if reason.contains("HTTP 404") || reason.contains("HTTP 410") {
+                drop(ha_client);
+                mark_unregistered(&state, &app, "startup health check: webhook dead").await;
+                Ok(ConnectionStatus::WebhookDead)
+            } else {
+                Ok(ConnectionStatus::Unreachable { reason })
+            }
+        }
     }
-
-    // Ping worked but webhook didn't — HA forgot us. Drop the dead webhook
-    // here so the UI flow lands cleanly on the setup screen.
-    drop(ha_client);
-    mark_unregistered(&state, &app, "startup health check: webhook dead").await;
-    Ok(ConnectionStatus::WebhookDead)
 }
 
 /// Shared with sensor_update_loop in lib.rs.
@@ -265,17 +387,20 @@ pub async fn toggle_sensor(
     enabled: bool,
 ) -> Result<(), String> {
     let mut settings = state.settings.lock().await;
-    settings.enabled_sensors.insert(sensor_id, enabled);
-    if let Err(e) = settings.save(&app) {
+    let mut next = settings.clone();
+    next.enabled_sensors.insert(sensor_id, enabled);
+    if let Err(e) = next.save(&app) {
         log::error!("[HA] Save settings failed: {}", e);
         return Err(e);
     }
+    *settings = next;
 
     // Update collector
     let mut collector = state.collector.lock().await;
     collector.set_enabled_sensors(settings.enabled_sensors.clone());
-
-    Ok(())
+    drop(collector);
+    drop(settings);
+    sync_all_sensors(state.inner().clone(), &app).await
 }
 
 /// Get current language
@@ -302,12 +427,21 @@ pub fn open_dashboard_view<R: tauri::Runtime, M: Manager<R>>(
         let _ = existing.close();
     }
 
-    let escaped_token = token
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"");
-    let escaped_url = base_url
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"");
+    let url: url::Url = base_url
+        .parse()
+        .map_err(|e: url::ParseError| format!("Invalid dashboard URL: {e}"))?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err("Dashboard URL must be an HTTP(S) URL without credentials".into());
+    }
+    let origin = url.origin().ascii_serialization();
+    let allowed_origin = origin.clone();
+    let escaped_origin = serde_json::to_string(&origin).map_err(|e| e.to_string())?;
+    let escaped_token = serde_json::to_string(token).map_err(|e| e.to_string())?;
+    let escaped_url = serde_json::to_string(base_url).map_err(|e| e.to_string())?;
 
     // Initialization script: set hassTokens in localStorage BEFORE HA frontend loads.
     // Do NOT set window.externalApp — it hijacks auth and breaks long-lived tokens.
@@ -315,9 +449,10 @@ pub fn open_dashboard_view<R: tauri::Runtime, M: Manager<R>>(
         r#"
         (function() {{
             try {{
+                if (window.top !== window.self || location.origin !== {escaped_origin}) return;
                 localStorage.setItem("hassTokens", JSON.stringify({{
-                    hassUrl: "{escaped_url}",
-                    access_token: "{escaped_token}",
+                    hassUrl: {escaped_url},
+                    access_token: {escaped_token},
                     token_type: "Bearer",
                     expires_in: 315360000,
                     refresh_token: "",
@@ -330,21 +465,23 @@ pub fn open_dashboard_view<R: tauri::Runtime, M: Manager<R>>(
         "#
     );
 
-    let url: url::Url = base_url
-        .parse()
-        .map_err(|e: url::ParseError| format!("Invalid URL '{}': {}", base_url, e))?;
-
     let window = manager.get_window("main").ok_or("Main window not found")?;
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
     let phys = window.inner_size().map_err(|e| e.to_string())?;
     let logical = phys.to_logical::<f64>(scale);
 
-    log::info!("[Dashboard] Adding child webview {}x{}", logical.width, logical.height);
+    log::info!(
+        "[Dashboard] Adding child webview {}x{}",
+        logical.width,
+        logical.height
+    );
 
     window
         .add_child(
             tauri::webview::WebviewBuilder::new("ha-view", tauri::WebviewUrl::External(url))
                 .initialization_script(&init_script)
+                .on_navigation(move |next| next.origin().ascii_serialization() == allowed_origin)
+                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
                 .auto_resize(),
             tauri::LogicalPosition::new(0.0, 0.0),
             logical,

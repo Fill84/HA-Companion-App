@@ -28,7 +28,11 @@ iconFiles.forEach(file => {
 });
 
 // Copy vendored third-party JS (tsparticles bundle for HA-style background)
-const vendorFiles = ['tsparticles.preset.links.bundle.min.js'];
+const vendorFiles = [
+    'tsparticles.preset.links.bundle.min.js',
+    'tsparticles.preset.links.bundle.min.js.LICENSE.txt',
+    'LICENSE.tsparticles.txt',
+];
 vendorFiles.forEach(file => {
     fs.copyFileSync(path.join('vendor', file), path.join('dist/vendor', file));
 });

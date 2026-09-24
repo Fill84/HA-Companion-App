@@ -3,26 +3,32 @@
  */
 
 let currentSettings = null;
+let pendingSensorPreferences = {};
+let settingsFocusReturn = null;
 
 /**
  * Open settings modal and populate with current values
  */
 async function openSettings() {
+    settingsFocusReturn = document.activeElement;
     try {
         currentSettings = await window.__TAURI__.core.invoke("get_settings");
+        pendingSensorPreferences = { ...(currentSettings.enabled_sensors || {}) };
 
         // Populate fields
         document.getElementById("settings-server-url").value = currentSettings.server_url || "";
-        document.getElementById("settings-token").value = currentSettings.access_token || "";
+        document.getElementById("settings-token").value = "";
+        document.getElementById("settings-token").placeholder = currentSettings.has_access_token
+            ? t("keep_existing_token") : t("enter_new_token");
         document.getElementById("settings-interval").value = currentSettings.update_interval || 60;
         document.getElementById("settings-language").value = currentSettings.language || "en";
         document.getElementById("settings-autostart").checked = currentSettings.autostart || false;
+        document.getElementById("settings-temperature-provider").checked = currentSettings.cpu_temperature_provider || false;
+        document.getElementById("temperature-provider-group").classList.toggle("hidden", !currentSettings.cpu_temperature_provider_supported);
 
         // Device info
         document.getElementById("info-device-id").textContent = currentSettings.device_id || "-";
-        document.getElementById("info-webhook-id").textContent = currentSettings.webhook_id
-            ? currentSettings.webhook_id.substring(0, 16) + "..."
-            : "-";
+        document.getElementById("info-webhook-id").textContent = currentSettings.webhook_id_preview || "-";
         document.getElementById("info-status").textContent = currentSettings.is_registered
             ? t("registered")
             : t("not_registered");
@@ -43,6 +49,7 @@ async function openSettings() {
 
         // Show modal
         document.getElementById("settings-overlay").classList.remove("hidden");
+        document.getElementById("settings-close").focus?.();
     } catch (err) {
         console.error("Failed to load settings:", err);
     }
@@ -52,7 +59,10 @@ async function openSettings() {
  * Close settings modal and restore the HA dashboard overlay
  */
 async function closeSettings() {
+    if (document.getElementById("settings-overlay").classList.contains("hidden")) return;
     document.getElementById("settings-overlay").classList.add("hidden");
+    settingsFocusReturn?.focus?.();
+    settingsFocusReturn = null;
     // Re-open the HA child webview on top
     try {
         await window.__TAURI__.core.invoke("load_dashboard");
@@ -67,18 +77,27 @@ async function closeSettings() {
 async function saveSettings() {
     const serverUrl = document.getElementById("settings-server-url").value.trim();
     const token = document.getElementById("settings-token").value.trim();
-    const interval = parseInt(document.getElementById("settings-interval").value) || 60;
+    const interval = Number(document.getElementById("settings-interval").value);
     const language = document.getElementById("settings-language").value;
     const autostart = document.getElementById("settings-autostart").checked;
 
     try {
+        if (!Number.isInteger(interval) || interval < 5 || interval > 3600) {
+            throw new Error("Update interval must be between 5 and 3600 seconds");
+        }
         await window.__TAURI__.core.invoke("save_settings", {
             serverUrl: serverUrl,
             accessToken: token,
             updateInterval: interval,
             language: language,
             autostart: autostart,
+            cpuTemperatureProvider: document.getElementById("settings-temperature-provider").checked,
+            enabledSensors: pendingSensorPreferences,
         });
+
+        if (serverUrl !== currentSettings.server_url || token) {
+            await window.__TAURI__.core.invoke("register_device");
+        }
 
         // Update language
         setLanguage(language);
@@ -108,21 +127,16 @@ async function populateSensorList() {
             checkbox.type = "checkbox";
             checkbox.id = `sensor-${sensor.id}`;
             checkbox.checked = sensor.enabled;
-            checkbox.addEventListener("change", async () => {
-                try {
-                    await window.__TAURI__.core.invoke("toggle_sensor", {
-                        sensorId: sensor.id,
-                        enabled: checkbox.checked,
-                    });
-                } catch (err) {
-                    console.error("Failed to toggle sensor:", err);
-                    checkbox.checked = !checkbox.checked;
-                }
+            checkbox.addEventListener("change", () => {
+                pendingSensorPreferences[sensor.id] = checkbox.checked;
             });
 
             const label = document.createElement("label");
             label.htmlFor = `sensor-${sensor.id}`;
-            label.textContent = t(sensor.id) || sensor.name;
+            label.setAttribute("data-sensor-key", sensor.id);
+            label.setAttribute("data-sensor-name", sensor.name);
+            const translatedName = t(sensor.id);
+            label.textContent = translatedName === sensor.id ? sensor.name : translatedName;
 
             const badge = document.createElement("span");
             badge.className = "sensor-badge " + (sensor.updates_at_interval ? "badge-dynamic" : "badge-static");
@@ -144,6 +158,12 @@ async function populateSensorList() {
 function togglePassword(inputId) {
     const input = document.getElementById(inputId);
     input.type = input.type === "password" ? "text" : "password";
+    const button = document.querySelector(`[data-password-target="${inputId}"]`);
+    if (button) {
+        const key = input.type === "password" ? "show_password" : "hide_password";
+        button.setAttribute("data-i18n-aria-label", key);
+        button.setAttribute("aria-label", t(key));
+    }
 }
 
 /**
@@ -162,9 +182,7 @@ async function reconnectNow() {
         // Refresh device info panel (new webhook_id, status flipped)
         try {
             const fresh = await window.__TAURI__.core.invoke("get_settings");
-            document.getElementById("info-webhook-id").textContent = fresh.webhook_id
-                ? fresh.webhook_id.substring(0, 16) + "..."
-                : "-";
+            document.getElementById("info-webhook-id").textContent = fresh.webhook_id_preview || "-";
             const statusInfo = document.getElementById("info-status");
             statusInfo.textContent = fresh.is_registered ? t("registered") : t("not_registered");
             statusInfo.className = "info-value " + (fresh.is_registered ? "status-ok" : "status-error");
@@ -200,6 +218,9 @@ async function showMyIp() {
 
 // Event listeners
 document.addEventListener("DOMContentLoaded", () => {
+    for (const button of document.querySelectorAll("[data-password-target]")) {
+        button.addEventListener("click", () => togglePassword(button.dataset.passwordTarget));
+    }
     document.getElementById("settings-close").addEventListener("click", closeSettings);
     document.getElementById("settings-cancel").addEventListener("click", closeSettings);
     document.getElementById("settings-save").addEventListener("click", saveSettings);
@@ -215,8 +236,26 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Close on Escape
     document.addEventListener("keydown", (e) => {
+        const overlay = document.getElementById("settings-overlay");
+        if (overlay.classList.contains("hidden")) return;
         if (e.key === "Escape") {
             closeSettings();
+        } else if (e.key === "Tab") {
+            const focusable = [...overlay.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href]')]
+                .filter(el => el.getClientRects().length > 0);
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (!overlay.contains(document.activeElement)) {
+                e.preventDefault();
+                first.focus();
+            } else if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
         }
     });
 });

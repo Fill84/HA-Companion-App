@@ -6,5 +6,4 @@ pub mod gpu;
 pub mod memory;
 pub mod network;
 pub mod system_info;
-#[cfg(windows)]
-pub mod winring0;
+pub mod temperature;

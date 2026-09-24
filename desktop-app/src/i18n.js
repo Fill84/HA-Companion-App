@@ -26,6 +26,8 @@ const translations = {
         update_interval: "Update Interval (seconds)",
         language: "Language",
         autostart: "Start at login",
+        temperature_provider: "Optional CPU temperature provider",
+        temperature_provider_help: "Requires .NET 10 and the official PawnIO driver (2.2 or newer), installed separately. Disabled by default. Without a supported reading, CPU temperature is unknown. The app does not install a driver.",
         sensors: "Sensors",
         device_info: "Device Info",
         device_id: "Device ID",
@@ -44,6 +46,12 @@ const translations = {
         reconnecting: "Reconnecting...",
         reconnect_success: "Reconnected successfully.",
         reconnect_failed: "Reconnect failed: ",
+        keep_existing_token: "Leave blank to keep the saved token",
+        enter_new_token: "Enter a Home Assistant access token",
+        setup_banner_token_invalid: "The saved token is no longer accepted. Enter a new Home Assistant access token.",
+        close_settings: "Close settings",
+        show_password: "Show password",
+        hide_password: "Hide password",
 
         // Sensor names
         cpu_usage: "CPU Usage",
@@ -61,6 +69,14 @@ const translations = {
         hostname: "Hostname",
         motherboard: "Motherboard",
         bios_version: "BIOS Version",
+        bios_vendor: "BIOS Vendor",
+        bios_date: "BIOS Date",
+        swap_usage: "Swap Usage",
+        system_uptime: "System Uptime",
+        process_count: "Process Count",
+        last_boot: "Last Boot",
+        logged_in_user: "Logged-in User",
+        display: "Display",
 
         // Messages
         error_server_url: "Please enter a valid server URL",
@@ -92,6 +108,8 @@ const translations = {
         update_interval: "Update Interval (seconden)",
         language: "Taal",
         autostart: "Starten bij inloggen",
+        temperature_provider: "Optionele CPU-temperatuurprovider",
+        temperature_provider_help: "Vereist .NET 10 en de officiële PawnIO-driver (2.2 of nieuwer), afzonderlijk geïnstalleerd. Standaard uitgeschakeld. Zonder ondersteunde meting is de CPU-temperatuur onbekend. De app installeert geen driver.",
         sensors: "Sensoren",
         device_info: "Apparaat Info",
         device_id: "Apparaat ID",
@@ -110,6 +128,12 @@ const translations = {
         reconnecting: "Opnieuw verbinden...",
         reconnect_success: "Opnieuw verbonden.",
         reconnect_failed: "Opnieuw verbinden mislukt: ",
+        keep_existing_token: "Leeg laten om het opgeslagen token te behouden",
+        enter_new_token: "Voer een Home Assistant-toegangstoken in",
+        setup_banner_token_invalid: "Het opgeslagen token wordt niet meer geaccepteerd. Voer een nieuw Home Assistant-toegangstoken in.",
+        close_settings: "Instellingen sluiten",
+        show_password: "Wachtwoord tonen",
+        hide_password: "Wachtwoord verbergen",
 
         // Sensor names
         cpu_usage: "CPU Gebruik",
@@ -127,6 +151,14 @@ const translations = {
         hostname: "Hostnaam",
         motherboard: "Moederbord",
         bios_version: "BIOS Versie",
+        bios_vendor: "BIOS-leverancier",
+        bios_date: "BIOS-datum",
+        swap_usage: "Wisselgeheugengebruik",
+        system_uptime: "Systeem-uptime",
+        process_count: "Aantal processen",
+        last_boot: "Laatste opstarttijd",
+        logged_in_user: "Aangemelde gebruiker",
+        display: "Beeldscherm",
 
         // Messages
         error_server_url: "Voer een geldige server URL in",
@@ -156,6 +188,7 @@ function setLanguage(lang) {
         lang = "en";
     }
     currentLanguage = lang;
+    document.documentElement.lang = lang;
     updateUITranslations();
 }
 
@@ -173,5 +206,13 @@ function updateUITranslations() {
             el.tagName === "BUTTON" || el.tagName === "SMALL") {
             el.textContent = translated;
         }
+    });
+    document.querySelectorAll("[data-sensor-key]").forEach((el) => {
+        const key = el.getAttribute("data-sensor-key");
+        el.textContent = translations[currentLanguage][key] || translations.en[key]
+            || el.getAttribute("data-sensor-name") || key;
+    });
+    document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => {
+        el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria-label")));
     });
 }

@@ -48,7 +48,9 @@ pub async fn register_device(
     if !response.success {
         let err = format!(
             "Registration rejected: {}",
-            response.error.unwrap_or_else(|| "Unknown error".to_string())
+            response
+                .error
+                .unwrap_or_else(|| "Unknown error".to_string())
         );
         log::error!("[HA] {}", err);
         return Err(err);
@@ -59,89 +61,97 @@ pub async fn register_device(
         "No webhook_id in response".to_string()
     })?;
 
-    // Save webhook_id
-    settings.webhook_id = Some(webhook_id.clone());
+    // The webhook may exist in HA before all sensors are accepted. Keep it
+    // transient until the first complete update succeeds.
     ha_client.set_webhook_id(webhook_id.clone());
-    if let Err(e) = settings.save(app_handle) {
-        log::error!("[HA] Failed to save settings: {}", e);
-        return Err(format!("Failed to save settings: {}", e));
-    }
+    let registration_result: Result<(), String> = async {
+        // After config entry creation, HA still needs to run async_setup_entry
+        // (which registers the webhook handler and starts the sensor platforms)
+        // before our webhook POSTs will work. Instead of a fixed sleep we poll:
+        // first sensor registration is retried with exponential backoff. On a
+        // healthy HA this typically succeeds within 1-2 seconds; on a slow or
+        // heavily loaded HA we keep trying for ~25s before giving up.
+        let all_sensors = collector.collect_all();
 
-    // After config entry creation, HA still needs to run async_setup_entry
-    // (which registers the webhook handler and starts the sensor platforms)
-    // before our webhook POSTs will work. Instead of a fixed sleep we poll:
-    // first sensor registration is retried with exponential backoff. On a
-    // healthy HA this typically succeeds within 1-2 seconds; on a slow or
-    // heavily loaded HA we keep trying for ~25s before giving up.
-    let all_sensors = collector.collect_all();
+        let first_sensor = all_sensors.first().cloned().ok_or_else(|| {
+            log::error!("[HA] No sensors collected — cannot complete registration");
+            "No sensors available to register".to_string()
+        })?;
 
-    let first_sensor = all_sensors.first().cloned().ok_or_else(|| {
-        log::error!("[HA] No sensors collected — cannot complete registration");
-        "No sensors available to register".to_string()
-    })?;
-
-    let mut attempt: u32 = 0;
-    let max_attempts: u32 = 8;
-    let mut delay_ms: u64 = 500;
-    loop {
-        match ha_client.register_sensor(&first_sensor).await {
-            Ok(()) => {
-                log::info!(
-                    "[HA] Initial sensor registered after {} retr{}",
-                    attempt,
-                    if attempt == 1 { "y" } else { "ies" }
-                );
-                break;
-            }
-            Err(e) => {
-                attempt += 1;
-                let err_str = e.to_string();
-                // 410 from HA means webhook is known but config entry missing;
-                // this won't resolve by waiting longer.
-                if err_str.contains("410") {
-                    log::error!(
-                        "[HA] Initial sensor registration returned 410 — config entry missing"
-                    );
-                    return Err(format!("Sensor registration failed: {}", err_str));
-                }
-                if attempt >= max_attempts {
-                    log::error!(
-                        "[HA] Initial sensor registration failed after {} attempts: {}",
+        let mut attempt: u32 = 0;
+        let max_attempts: u32 = 8;
+        let mut delay_ms: u64 = 500;
+        loop {
+            match ha_client.register_sensor(&first_sensor).await {
+                Ok(()) => {
+                    log::info!(
+                        "[HA] Initial sensor registered after {} retr{}",
                         attempt,
-                        err_str
+                        if attempt == 1 { "y" } else { "ies" }
                     );
-                    return Err(format!("Sensor registration failed: {}", err_str));
+                    break;
                 }
-                log::warn!(
-                    "[HA] Initial sensor registration attempt {} failed: {} (retrying in {}ms)",
-                    attempt,
-                    err_str,
-                    delay_ms
-                );
-                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-                // 500ms -> 1s -> 2s -> 4s -> 8s -> 8s -> 8s ...
-                delay_ms = (delay_ms * 2).min(8000);
+                Err(e) => {
+                    attempt += 1;
+                    let err_str = e.to_string();
+                    // 410 from HA means webhook is known but config entry missing;
+                    // this won't resolve by waiting longer.
+                    if err_str.contains("410") {
+                        log::error!(
+                            "[HA] Initial sensor registration returned 410 — config entry missing"
+                        );
+                        return Err(format!("Sensor registration failed: {}", err_str));
+                    }
+                    if attempt >= max_attempts {
+                        log::error!(
+                            "[HA] Initial sensor registration failed after {} attempts: {}",
+                            attempt,
+                            err_str
+                        );
+                        return Err(format!("Sensor registration failed: {}", err_str));
+                    }
+                    log::warn!(
+                        "[HA] Initial sensor registration attempt {} failed: {} (retrying in {}ms)",
+                        attempt,
+                        err_str,
+                        delay_ms
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    // 500ms -> 1s -> 2s -> 4s -> 8s -> 8s -> 8s ...
+                    delay_ms = (delay_ms * 2).min(8000);
+                }
             }
         }
-    }
 
-    // Webhook is alive; register the remaining sensors. Skip the first one
-    // (already registered above).
-    if all_sensors.len() > 1 {
-        if let Err(e) = ha_client.register_sensors(&all_sensors[1..]).await {
-            log::error!("[HA] Remaining sensor registration failed: {}", e);
-            return Err(format!("Sensor registration failed: {}", e));
+        // Webhook is alive; register the remaining sensors. Skip the first one
+        // (already registered above).
+        if all_sensors.len() > 1 {
+            if let Err(e) = ha_client.register_sensors(&all_sensors[1..]).await {
+                log::error!("[HA] Remaining sensor registration failed: {}", e);
+                return Err(format!("Sensor registration failed: {}", e));
+            }
         }
+
+        // Send initial sensor states
+        if let Err(e) = ha_client.update_sensors(&all_sensors, "all").await {
+            log::error!("[HA] Initial sensor update failed: {}", e);
+            return Err(format!("Initial sensor update failed: {}", e));
+        }
+
+        Ok(())
     }
-
-    // Send initial sensor states
-    if let Err(e) = ha_client.update_sensors(&all_sensors).await {
-        log::error!("[HA] Initial sensor update failed: {}", e);
-        return Err(format!("Initial sensor update failed: {}", e));
+    .await;
+    if let Err(error) = registration_result {
+        ha_client.clear_webhook_id();
+        return Err(error);
     }
-
-    log::info!("Device registered successfully with webhook_id: {}", webhook_id);
-
+    let previous_webhook_id = settings.webhook_id.replace(webhook_id.clone());
+    if let Err(error) = settings.save(app_handle) {
+        settings.webhook_id = previous_webhook_id;
+        ha_client.clear_webhook_id();
+        return Err(format!("Failed to save registration: {error}"));
+    }
+    log::info!("Device registration and initial sensor update succeeded");
     Ok(webhook_id)
 }
 
@@ -155,7 +165,9 @@ pub async fn re_register(
 ) -> Result<String, String> {
     // Clear existing webhook_id
     settings.webhook_id = None;
-    settings.save(app_handle).map_err(|e| format!("Failed to save settings: {}", e))?;
+    settings
+        .save(app_handle)
+        .map_err(|e| format!("Failed to save settings: {}", e))?;
 
     // Update HA client
     ha_client.update_config(settings.server_url.clone(), settings.access_token.clone());

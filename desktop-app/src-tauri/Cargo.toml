@@ -17,6 +17,7 @@ tauri = { version = "2", features = ["tray-icon", "image-ico", "unstable"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-store = "2"
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native", "windows-native", "sync-secret-service"] }
 sysinfo = "0.32"
 nvml-wrapper = "0.10"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
@@ -34,10 +35,6 @@ simplelog = "0.12"
 wmi = "0.14"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
-    "Win32_Security",
-    "Win32_Storage_FileSystem",
-    "Win32_System_IO",
-    "Win32_System_Services",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

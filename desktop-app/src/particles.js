@@ -17,7 +17,7 @@
     // HA's default primary color (used as both dot and link color).
     var PRIMARY = "#03a9f4";
 
-    window.tsParticles.load({
+    const container = await window.tsParticles.load({
         id: "tsparticles",
         options: {
             preset: "links",
@@ -69,4 +69,20 @@
             pauseOnBlur: true,
         },
     });
+
+    if (!container) return;
+    const setup = document.getElementById('setup-screen');
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const syncAnimation = () => {
+        const visible = setup && !setup.classList.contains('hidden') && !document.hidden;
+        if (visible && !reducedMotion.matches) container.play();
+        else container.pause();
+    };
+    new MutationObserver(syncAnimation).observe(setup, {
+        attributes: true,
+        attributeFilter: ['class'],
+    });
+    document.addEventListener('visibilitychange', syncAnimation);
+    reducedMotion.addEventListener('change', syncAnimation);
+    syncAnimation();
 })();

@@ -60,18 +60,11 @@ pub fn collect() -> SystemInfoData {
 }
 
 /// Dynamic system info that changes over time
-pub fn collect_dynamic() -> DynamicSystemInfo {
+pub fn collect_dynamic(sys: &System) -> DynamicSystemInfo {
     let uptime_seconds = System::uptime();
-    let process_count = {
-        let sys = System::new_with_specifics(
-            sysinfo::RefreshKind::new().with_processes(sysinfo::ProcessRefreshKind::new()),
-        );
-        sys.processes().len()
-    };
-
     DynamicSystemInfo {
         uptime_seconds,
-        process_count,
+        process_count: sys.processes().len(),
     }
 }
 
@@ -95,7 +88,11 @@ fn variant_to_string(v: &wmi::Variant) -> Option<String> {
     match v {
         Variant::String(s) => {
             let trimmed = s.trim();
-            if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
         }
         Variant::I1(n) => Some(n.to_string()),
         Variant::I2(n) => Some(n.to_string()),
@@ -118,7 +115,7 @@ fn variant_to_string(v: &wmi::Variant) -> Option<String> {
 #[cfg(windows)]
 fn collect_platform_info() -> PlatformInfo {
     use std::collections::HashMap;
-    use wmi::{COMLibrary, WMIConnection, Variant};
+    use wmi::{COMLibrary, Variant, WMIConnection};
 
     let com_lib = match COMLibrary::new() {
         Ok(c) => c,
@@ -150,16 +147,17 @@ fn collect_platform_info() -> PlatformInfo {
     // Get motherboard info
     let mut mb_manufacturer = None;
     let mut mb_model = None;
-    match wmi_con.raw_query::<HashMap<String, Variant>>(
-        "SELECT Manufacturer, Product FROM Win32_BaseBoard",
-    ) {
+    match wmi_con
+        .raw_query::<HashMap<String, Variant>>("SELECT Manufacturer, Product FROM Win32_BaseBoard")
+    {
         Ok(results) => {
             if let Some(result) = results.first() {
                 mb_manufacturer = result.get("Manufacturer").and_then(variant_to_string);
                 mb_model = result.get("Product").and_then(variant_to_string);
                 log::info!(
                     "[SystemInfo] Motherboard: manufacturer={:?}, model={:?}",
-                    mb_manufacturer, mb_model
+                    mb_manufacturer,
+                    mb_model
                 );
             } else {
                 log::warn!("[SystemInfo] Win32_BaseBoard query returned empty results");
@@ -194,7 +192,9 @@ fn collect_platform_info() -> PlatformInfo {
                 }
                 log::info!(
                     "[SystemInfo] BIOS: version={:?}, vendor={:?}, date={:?}",
-                    bios_version, bios_vendor, bios_release_date
+                    bios_version,
+                    bios_vendor,
+                    bios_release_date
                 );
             } else {
                 log::warn!("[SystemInfo] Win32_BIOS query returned empty results");
@@ -318,7 +318,7 @@ fn collect_logged_in_user() -> Option<String> {
 #[cfg(windows)]
 fn collect_displays() -> Vec<DisplayInfo> {
     use std::collections::HashMap;
-    use wmi::{COMLibrary, WMIConnection, Variant};
+    use wmi::{COMLibrary, Variant, WMIConnection};
 
     let com_lib = match COMLibrary::new() {
         Ok(c) => c,

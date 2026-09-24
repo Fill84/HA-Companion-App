@@ -4,6 +4,32 @@ use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
 const STORE_PATH: &str = "settings.json";
+const TOKEN_SERVICE: &str = "com.ha-companion.desktop.access-token";
+
+#[derive(Serialize, Deserialize)]
+struct StoredToken {
+    server_url: String,
+    access_token: String,
+}
+
+fn token_entry(device_id: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(TOKEN_SERVICE, device_id)
+        .map_err(|error| format!("Could not open system credential store: {error}"))
+}
+
+fn encoded_token(server_url: &str, access_token: &str) -> Result<String, String> {
+    serde_json::to_string(&StoredToken {
+        server_url: server_url.to_string(),
+        access_token: access_token.to_string(),
+    })
+    .map_err(|error| error.to_string())
+}
+
+fn token_for_server(raw: &str, server_url: &str) -> Option<String> {
+    let stored: StoredToken = serde_json::from_str(raw).ok()?;
+    (stored.server_url == server_url && !stored.access_token.is_empty())
+        .then_some(stored.access_token)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -15,6 +41,8 @@ pub struct AppSettings {
     pub language: String,
     pub enabled_sensors: HashMap<String, bool>,
     pub autostart: bool,
+    #[serde(default)]
+    pub cpu_temperature_provider: bool,
 }
 
 impl Default for AppSettings {
@@ -28,6 +56,7 @@ impl Default for AppSettings {
             language: "en".to_string(),
             enabled_sensors: HashMap::new(),
             autostart: false,
+            cpu_temperature_provider: false,
         }
     }
 }
@@ -45,7 +74,7 @@ impl AppSettings {
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_default();
 
-        let access_token = store
+        let legacy_token = store
             .get("access_token")
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_default();
@@ -59,9 +88,33 @@ impl AppSettings {
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_else(|| {
                 let id = uuid::Uuid::new_v4().to_string();
-                let _ = store.set("device_id", serde_json::json!(id));
+                store.set("device_id", serde_json::json!(id));
                 id
             });
+
+        let access_token =
+            match token_entry(&device_id).and_then(|entry| match entry.get_password() {
+                Ok(raw) => Ok(token_for_server(&raw, &server_url).unwrap_or_default()),
+                Err(keyring::Error::NoEntry)
+                    if !legacy_token.is_empty() && !server_url.is_empty() =>
+                {
+                    let payload = encoded_token(&server_url, &legacy_token)?;
+                    entry.set_password(&payload).map_err(|error| {
+                        format!("Could not migrate token to system credential store: {error}")
+                    })?;
+                    store.delete("access_token");
+                    store.save().map_err(|error| error.to_string())?;
+                    Ok(legacy_token.clone())
+                }
+                Err(keyring::Error::NoEntry) => Ok(String::new()),
+                Err(error) => Err(format!("Could not read system credential store: {error}")),
+            }) {
+                Ok(token) => token,
+                Err(error) => {
+                    log::error!("{error}");
+                    String::new()
+                }
+            };
 
         let update_interval = store
             .get("update_interval")
@@ -82,6 +135,10 @@ impl AppSettings {
             .get("autostart")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let cpu_temperature_provider = store
+            .get("cpu_temperature_provider")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         Self {
             server_url,
@@ -92,6 +149,7 @@ impl AppSettings {
             language,
             enabled_sensors,
             autostart,
+            cpu_temperature_provider,
         }
     }
 
@@ -100,7 +158,20 @@ impl AppSettings {
         let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
 
         store.set("server_url", serde_json::json!(self.server_url));
-        store.set("access_token", serde_json::json!(self.access_token));
+        let entry = token_entry(&self.device_id)?;
+        let previous = match entry.get_password() {
+            Ok(raw) => Some(raw),
+            Err(keyring::Error::NoEntry) => None,
+            Err(error) => return Err(format!("Could not read system credential store: {error}")),
+        };
+        let desired = encoded_token(&self.server_url, &self.access_token)?;
+        let credential_changed = previous.as_deref() != Some(desired.as_str());
+        if credential_changed {
+            entry.set_password(&desired).map_err(|error| {
+                format!("Could not save token in system credential store: {error}")
+            })?;
+        }
+        store.delete("access_token");
         store.set("webhook_id", serde_json::json!(self.webhook_id));
         store.set("device_id", serde_json::json!(self.device_id));
         store.set("update_interval", serde_json::json!(self.update_interval));
@@ -110,7 +181,22 @@ impl AppSettings {
             serde_json::to_value(&self.enabled_sensors).unwrap_or_default(),
         );
         store.set("autostart", serde_json::json!(self.autostart));
-
+        store.set(
+            "cpu_temperature_provider",
+            serde_json::json!(self.cpu_temperature_provider),
+        );
+        if let Err(error) = store.save() {
+            if credential_changed {
+                let rollback = match previous {
+                    Some(raw) => entry.set_password(&raw),
+                    None => entry.delete_credential(),
+                };
+                if let Err(rollback_error) = rollback {
+                    log::error!("Could not restore credential after settings save failure: {rollback_error}");
+                }
+            }
+            return Err(error.to_string());
+        }
         Ok(())
     }
 
@@ -123,5 +209,46 @@ impl AppSettings {
         }
         self.webhook_id = None;
         self.save(app)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_settings_do_not_opt_in_to_a_new_provider() {
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("cpu_temperature_provider");
+        value["webhook_id"] = serde_json::json!("existing-webhook");
+        let settings: AppSettings = serde_json::from_value(value).unwrap();
+        assert!(!settings.cpu_temperature_provider);
+        assert_eq!(settings.webhook_id.as_deref(), Some("existing-webhook"));
+    }
+
+    #[test]
+    fn stored_token_is_bound_to_its_server() {
+        let encoded = encoded_token("https://ha.example", "secret").unwrap();
+        assert_eq!(
+            token_for_server(&encoded, "https://ha.example"),
+            Some("secret".into())
+        );
+        assert_eq!(token_for_server(&encoded, "https://other.example"), None);
+        assert_eq!(token_for_server("broken", "https://ha.example"), None);
+    }
+
+    #[test]
+    #[ignore = "writes and removes a disposable credential in the OS vault"]
+    fn os_credential_store_roundtrip() {
+        let account = format!("test-{}", uuid::Uuid::new_v4());
+        let entry = token_entry(&account).unwrap();
+        entry.set_password("disposable-test-secret").unwrap();
+        let read = entry.get_password();
+        let cleanup = entry.delete_credential();
+        assert_eq!(read.unwrap(), "disposable-test-secret");
+        cleanup.unwrap();
     }
 }

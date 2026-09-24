@@ -29,9 +29,9 @@ pub fn collect(sys: &System) -> MemoryData {
         used_bytes: used,
         available_bytes: available,
         usage_percent,
-        total_gb: total as f64 / 1_073_741_824.0,
-        used_gb: used as f64 / 1_073_741_824.0,
-        available_gb: available as f64 / 1_073_741_824.0,
+        total_gb: total as f64 / 1_000_000_000.0,
+        used_gb: used as f64 / 1_000_000_000.0,
+        available_gb: available as f64 / 1_000_000_000.0,
         swap_total_bytes: sys.total_swap(),
         swap_used_bytes: sys.used_swap(),
     }

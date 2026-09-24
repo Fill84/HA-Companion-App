@@ -3,9 +3,9 @@ use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    Manager, RunEvent, WindowEvent,
-    Emitter,
+    Emitter, Manager, RunEvent, WindowEvent,
 };
+use tauri_plugin_autostart::ManagerExt as _;
 use tokio::sync::Mutex;
 
 mod commands;
@@ -17,8 +17,8 @@ mod settings;
 mod shutdown_hook;
 
 use commands::{mark_unregistered, *};
-use ha_client::HaClient;
-use sensors::collector::SensorCollector;
+use ha_client::{HaClient, RegistrationRequest};
+use sensors::collector::{SensorCollector, SensorValue};
 use settings::AppSettings;
 
 /// Shared application state
@@ -29,6 +29,23 @@ pub struct AppState {
     pub is_registered: Mutex<bool>,
 }
 
+/// Run potentially slow hardware reads on Tokio's blocking pool.
+pub async fn collect_snapshot(
+    state: Arc<AppState>,
+    full: bool,
+) -> Result<Vec<SensorValue>, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut collector = state.collector.blocking_lock();
+        if full {
+            collector.collect_all()
+        } else {
+            collector.collect_dynamic()
+        }
+    })
+    .await
+    .map_err(|error| format!("Sensor collection worker failed: {error}"))
+}
+
 pub fn run(dev_mode: bool) {
     // Always log to file. In dev/debug, also mirror to stderr so the
     // terminal shows live output.
@@ -37,18 +54,18 @@ pub fn run(dev_mode: bool) {
         if let Err(e) = logging::init_logger(path) {
             // Logger init failed — fall back to env_logger so we at least get
             // stderr output and can diagnose why the file logger failed.
-            eprintln!("[bootstrap] file logger init failed: {} — falling back to stderr", e);
-            let _ = env_logger::Builder::from_env(
-                env_logger::Env::default().default_filter_or("info"),
-            )
-            .try_init();
+            eprintln!(
+                "[bootstrap] file logger init failed: {} — falling back to stderr",
+                e
+            );
+            let _ =
+                env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+                    .try_init();
         }
     } else {
         // APPDATA not set (CI/Linux dev) — stderr is fine.
-        let _ = env_logger::Builder::from_env(
-            env_logger::Env::default().default_filter_or("info"),
-        )
-        .try_init();
+        let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+            .try_init();
     }
 
     log::info!(
@@ -76,12 +93,35 @@ pub fn run(dev_mode: bool) {
 
             // Load settings
             let app_settings = AppSettings::load(&handle);
-            let ha_client = HaClient::new(
+            let autostart_result = if app_settings.autostart {
+                handle.autolaunch().enable()
+            } else {
+                handle.autolaunch().disable()
+            };
+            if let Err(error) = autostart_result {
+                log::warn!("Could not reconcile system autostart: {error}");
+            }
+            let mut ha_client = HaClient::new(
                 app_settings.server_url.clone(),
                 app_settings.access_token.clone(),
                 app_settings.webhook_id.clone(),
             );
-            let collector = SensorCollector::new(&app_settings.enabled_sensors);
+            ha_client.set_update_interval(app_settings.update_interval);
+            let mut collector = SensorCollector::new(&app_settings.enabled_sensors);
+            let helper_path = handle
+                .path()
+                .resource_dir()
+                .ok()
+                .map(|dir| dir.join("hwmon/ha-hwmon.exe"));
+            #[cfg(debug_assertions)]
+            let helper_path = helper_path.filter(|path| path.is_file()).or_else(|| {
+                Some(
+                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("resources/hwmon-net10/ha-hwmon.exe"),
+                )
+            });
+            collector
+                .configure_temperature_provider(helper_path, app_settings.cpu_temperature_provider);
 
             // Create shared state
             let state = Arc::new(AppState {
@@ -97,7 +137,8 @@ pub fn run(dev_mode: bool) {
             // device_offline before Windows reaps the process.
             {
                 let hook_state = state.clone();
-                shutdown_hook::install(move || {
+                let main_window = app.get_window("main").expect("main window");
+                shutdown_hook::install(&main_window, move || {
                     let state = hook_state.clone();
                     // Spawn into a Tokio runtime, block briefly so the OS
                     // shutdown handshake waits for the HTTP POST.
@@ -107,10 +148,12 @@ pub fn run(dev_mode: bool) {
                             .build()
                         {
                             rt.block_on(async move {
-                                let ha = state.ha_client.lock().await;
                                 let _ = tokio::time::timeout(
                                     std::time::Duration::from_secs(2),
-                                    ha.send_device_offline(),
+                                    async {
+                                        let ha = state.ha_client.lock().await;
+                                        ha.send_device_offline().await
+                                    },
                                 )
                                 .await;
                             });
@@ -121,12 +164,9 @@ pub fn run(dev_mode: bool) {
             }
 
             // Build tray menu
-            let show_hide = MenuItemBuilder::with_id("show_hide", "Show / Hide")
-                .build(app)?;
-            let settings_item = MenuItemBuilder::with_id("settings", "Settings")
-                .build(app)?;
-            let quit = MenuItemBuilder::with_id("quit", "Quit")
-                .build(app)?;
+            let show_hide = MenuItemBuilder::with_id("show_hide", "Show / Hide").build(app)?;
+            let settings_item = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&show_hide)
@@ -244,12 +284,12 @@ pub fn run(dev_mode: bool) {
                         .build()
                     {
                         rt.block_on(async move {
-                            let ha = state.ha_client.lock().await;
-                            let _ = tokio::time::timeout(
-                                std::time::Duration::from_secs(2),
-                                ha.send_device_offline(),
-                            )
-                            .await;
+                            let _ =
+                                tokio::time::timeout(std::time::Duration::from_secs(2), async {
+                                    let ha = state.ha_client.lock().await;
+                                    ha.send_device_offline().await
+                                })
+                                .await;
                         });
                     }
                 })
@@ -273,6 +313,29 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
     // Wait a bit for app to initialize
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
+    if *state.is_registered.lock().await {
+        let device_id = state.settings.lock().await.device_id.clone();
+        let info = crate::sensors::system_info::collect();
+        let request = RegistrationRequest {
+            device_id,
+            device_name: info.hostname,
+            manufacturer: info.motherboard_manufacturer,
+            model: info.motherboard_model,
+            os_name: Some(info.os_name),
+            os_version: Some(info.os_version),
+            app_version: Some(env!("CARGO_PKG_VERSION").into()),
+        };
+        if let Err(error) = state
+            .ha_client
+            .lock()
+            .await
+            .update_registration(&request)
+            .await
+        {
+            log::warn!("Could not refresh device metadata: {error}");
+        }
+    }
+
     let mut cycle_count: u64 = 0;
 
     loop {
@@ -284,10 +347,14 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
         let is_registered = *state.is_registered.lock().await;
 
         if is_registered {
-            if cycle_count % 10 == 0 {
-                let all_sensors = {
-                    let mut collector = state.collector.lock().await;
-                    collector.collect_all()
+            if cycle_count.is_multiple_of(10) {
+                let all_sensors = match collect_snapshot(state.clone(), true).await {
+                    Ok(sensors) => sensors,
+                    Err(error) => {
+                        log::error!("{error}");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
+                        continue;
+                    }
                 };
                 let ha_client = state.ha_client.lock().await;
                 if let Err(e) = ha_client.register_sensors(&all_sensors).await {
@@ -299,7 +366,7 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                     }
                 } else {
                     log::debug!("Re-registered {} sensors with HA", all_sensors.len());
-                    if let Err(e) = ha_client.update_sensors(&all_sensors).await {
+                    if let Err(e) = ha_client.update_sensors(&all_sensors, "all").await {
                         log::error!("Failed to update all sensors: {}", e);
                         let err_str = e.to_string();
                         drop(ha_client);
@@ -309,13 +376,17 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                     }
                 }
             } else {
-                let sensor_data = {
-                    let mut collector = state.collector.lock().await;
-                    collector.collect_dynamic()
+                let sensor_data = match collect_snapshot(state.clone(), false).await {
+                    Ok(sensors) => sensors,
+                    Err(error) => {
+                        log::error!("{error}");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
+                        continue;
+                    }
                 };
 
                 let ha_client = state.ha_client.lock().await;
-                if let Err(e) = ha_client.update_sensors(&sensor_data).await {
+                if let Err(e) = ha_client.update_sensors(&sensor_data, "dynamic").await {
                     log::error!("Failed to update sensors: {}", e);
                     let err_str = e.to_string();
                     drop(ha_client);

@@ -5,9 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Home Assistant Companion</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="src/styles.css">
 </head>
 
@@ -35,15 +32,15 @@
                         <label for="setup-token" data-i18n="access_token">Long-Lived Access Token</label>
                         <div class="password-input">
                             <input type="password" id="setup-token" placeholder="eyJ0eXAiOi..." required>
-                            <button type="button" class="toggle-password"
-                                onclick="togglePassword('setup-token')">👁</button>
+                            <button type="button" class="toggle-password" aria-label="Show password" data-i18n-aria-label="show_password"
+                                data-password-target="setup-token">👁</button>
                         </div>
                         <small class="help-text" data-i18n="token_help">Create a token in HA: Profile → Long-Lived Access
                             Tokens</small>
                     </div>
                     <button type="submit" class="btn btn-primary" data-i18n="connect">Connect</button>
-                    <div id="setup-error" class="error-message hidden"></div>
-                    <div id="setup-loading" class="loading hidden">
+                    <div id="setup-error" class="error-message hidden" role="alert"></div>
+                    <div id="setup-loading" class="loading hidden" role="status">
                         <div class="spinner"></div>
                         <span data-i18n="registering">Registering device...</span>
                     </div>
@@ -51,7 +48,8 @@
             </div>
 
             <div class="setup-footer-row">
-                <label class="setup-language">
+                <label class="setup-language" for="setup-language">
+                    <span class="sr-only" data-i18n="language">Language</span>
                     <select id="setup-language">
                         <option value="en">English</option>
                         <option value="nl">Nederlands</option>
@@ -67,10 +65,10 @@
 
     <!-- Settings Modal Overlay -->
     <div id="settings-overlay" class="settings-overlay hidden">
-        <div class="settings-modal">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
             <div class="settings-header">
-                <h2 data-i18n="settings">Settings</h2>
-                <button id="settings-close" class="settings-close">&times;</button>
+                <h2 id="settings-title" data-i18n="settings">Settings</h2>
+                <button id="settings-close" class="settings-close" aria-label="Close settings" data-i18n-aria-label="close_settings">&times;</button>
             </div>
             <div class="settings-body">
                 <div class="settings-section">
@@ -83,8 +81,8 @@
                         <label for="settings-token" data-i18n="access_token">Long-Lived Access Token</label>
                         <div class="password-input">
                             <input type="password" id="settings-token">
-                            <button type="button" class="toggle-password"
-                                onclick="togglePassword('settings-token')">👁</button>
+                            <button type="button" class="toggle-password" aria-label="Show password" data-i18n-aria-label="show_password"
+                                data-password-target="settings-token">👁</button>
                         </div>
                     </div>
                 </div>
@@ -110,6 +108,11 @@
 
                 <div class="settings-section">
                     <h3 data-i18n="sensors">Sensors</h3>
+                    <div id="temperature-provider-group" class="form-group hidden">
+                        <label for="settings-temperature-provider" data-i18n="temperature_provider">Optional CPU temperature provider</label>
+                        <input type="checkbox" id="settings-temperature-provider" aria-describedby="temperature-provider-help">
+                        <p id="temperature-provider-help" data-i18n="temperature_provider_help">Requires .NET 10 and the official PawnIO driver (2.2 or newer), installed separately. Disabled by default. Without a supported reading, CPU temperature is unknown.</p>
+                    </div>
                     <div id="sensor-list" class="sensor-list">
                         <!-- Populated dynamically -->
                     </div>
@@ -138,7 +141,7 @@
                         <span data-i18n="reconnect_label">Connection</span>
                         <button type="button" id="settings-reconnect" class="btn btn-small" data-i18n="reconnect">Reconnect</button>
                     </div>
-                    <div id="settings-reconnect-status" class="info-row info-row-status hidden"></div>
+                    <div id="settings-reconnect-status" class="info-row info-row-status hidden" role="status"></div>
                 </div>
             </div>
             <div class="settings-footer">

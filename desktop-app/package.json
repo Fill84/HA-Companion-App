@@ -3,11 +3,12 @@
     "version": "1.0.4",
     "description": "Home Assistant Desktop Companion App",
     "private": true,
+    "packageManager": "yarn@1.22.22",
     "scripts": {
         "tauri": "tauri",
         "tauri:dev": "tauri dev",
         "tauri:build": "tauri build",
-        "dev:server": "serve . -l 1420"
+        "dev:server": "node build-web.js && serve dist -l tcp://127.0.0.1:1420"
     },
     "devDependencies": {
         "@tauri-apps/cli": "^2",
