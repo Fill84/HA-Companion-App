@@ -1,5 +1,5 @@
-// Prevents additional console window on Windows in release
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// The desktop app logs to a file, including in debug builds.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 fn main() {
     let dev_mode = std::env::args().any(|a| a == "--dev");
