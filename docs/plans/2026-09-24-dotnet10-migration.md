@@ -1,5 +1,7 @@
 # Migratie van de optionele sensorhelper naar .NET 10
 
+**Bijwerking 24 september 2026:** de latere proef op `phill-pc` toonde dat de aanvankelijke frameworkafhankelijke helper niet startte zonder afzonderlijke .NET 10-runtime. De actuele build publiceert daarom self-contained als gecomprimeerd single-file bestand. Beide Windows-hosts (`phill-pc` en `beast-unit`) beantwoorden nu het protocol zonder afzonderlijke runtime en geven bij afwezige PawnIO `driver_missing` terug. Hieronder staat deels de oorspronkelijke migratiebeslissing; voor de actuele distributievereisten geldt [de helperdocumentatie](../../hwmon-helper/README.md).
+
 Datum: 24 september 2026. Status: lokaal geïmplementeerd en geverifieerd; geen release gepubliceerd.
 
 ## Wijzigingen

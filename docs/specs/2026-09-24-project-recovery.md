@@ -6,6 +6,8 @@ Status: werkdocument, 24 september 2026. Bron: [audit](../audit/2026-09-23/AUDIT
 
 De desktopapp mag zonder eigen kernel-driver starten. Niet-beschikbare hardwaremetingen worden `unknown` of ontbreken met een expliciete reden; er worden geen schattingen als fysieke sensormetingen gepresenteerd. Een optionele, gecontroleerde provider mag extra metingen leveren. Het HA-protocol moet onderscheid maken tussen HTTP-transport, een herkende opdracht en duurzaam verwerkte data. Het dashboard mag een HA-token uitsluitend aan de exacte, geconfigureerde HA-origin aanbieden. De app belooft geen universele sensordekking; dekking wordt per OS, vendor en provider aangetoond.
 
+Migratiebesluit van de gebruiker: bestaande Home Assistant-entity-ID's en automatiseringen blijven behouden. Als meerdere identieke onderdelen niet betrouwbaar fysiek aan oude index-ID's kunnen worden gekoppeld, blijft de oude ID bestaan maar krijgt de meting `unknown` totdat de koppeling zeker is. Volgorde alleen is dan geen bewijs van fysieke identiteit.
+
 ## Toetsbare eisen per auditbevinding
 
 | IDs | Eis en acceptatiebewijs |

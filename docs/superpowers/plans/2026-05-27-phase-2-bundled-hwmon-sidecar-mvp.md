@@ -1,3 +1,5 @@
+> Historisch plan. De LHM 0.9.4/WinRing0-route hieronder is vervallen. Zie [het nieuwe ontwerp](../../plans/2026-09-23-temperature-provider-design.md) en [de actuele provider](../../../hwmon-helper/README.md). Voer de oude stappen niet opnieuw uit.
+
 # Phase 2 (MVP): Bundled hwmon sidecar for real CPU temperature — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

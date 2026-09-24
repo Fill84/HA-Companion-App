@@ -25,6 +25,8 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
 3. Vul je Home Assistant server URL en Long-Lived Access Token in bij de eerste setup
 4. De app registreert automatisch je device en sensors in Home Assistant
 
+Het toegangstoken wordt in de Windows Credential Manager, macOS Keychain of een Linux Secret Service opgeslagen. Bij een upgrade wordt een eerder token uit `settings.json` alleen na succesvolle overdracht naar de OS-kluis uit dat bestand verwijderd. Als de kluis in de huidige sessie niet beschikbaar is, mislukt het opslaan met een foutmelding; op Linux is hiervoor een werkende Secret Service in de desktopsessie nodig. De afhandeling in een Windows-SSH-sessie is nog niet representatief voor een interactieve appstart en staat in de [verificatiestatus](docs/plans/2026-09-24-verificatiestatus.md).
+
 ### Home Assistant Integratie (via HACS)
 1. Voeg deze repo toe als custom repository in HACS:
    - Repository: `https://github.com/Fill84/ha-integration`
@@ -62,7 +64,7 @@ HA-Companion-App/
 
 ## CPU-temperatuur en hostbelasting
 
-De basisapp bevat geen WinRing0-driver meer. CPU-gebruik, frequentie en model werken zonder een extra temperatuurdriver. Voor Windows-CPU-temperatuur is een expliciet inschakelbare provider beschikbaar; deze vereist apart .NET 10 en de officiële PawnIO-driver. Zonder die provider is de temperatuur `unknown`. De app installeert of beheert geen kernel-driver.
+De basisapp bevat geen WinRing0-driver meer. CPU-gebruik, frequentie en model werken zonder een extra temperatuurdriver. Voor Windows-CPU-temperatuur is een expliciet inschakelbare provider beschikbaar; de meegeleverde helper bevat zijn eigen .NET 10-runtime en vereist voor echte metingen alleen een afzonderlijk geïnstalleerde officiële PawnIO-driver. Zonder die provider is de temperatuur `unknown`. De app installeert of beheert geen kernel-driver.
 
 De collector levert één snapshot per meetronde en hergebruikt de basis-systeemmetingen. De optionele helper blijft actief tijdens gebruik en leest op verzoek. Zie [providerdocumentatie, bouwinstructies en migratiegrenzen](hwmon-helper/README.md) en de [sensor-supportmatrix](docs/specs/2026-09-24-sensor-support.md). Bestaande WinRing0-services worden niet automatisch verwijderd; een upgrade van een oude installatie vraagt nog migratievalidatie.
 
