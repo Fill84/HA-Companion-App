@@ -28,6 +28,7 @@ pub struct AppState {
     pub ha_client: Mutex<HaClient>,
     pub collector: Mutex<SensorCollector>,
     pub is_registered: Mutex<bool>,
+    pub registration_lock: Mutex<()>,
 }
 
 /// Run potentially slow hardware reads on Tokio's blocking pool.
@@ -132,6 +133,7 @@ pub fn run(dev_mode: bool) {
                 ha_client: Mutex::new(ha_client),
                 collector: Mutex::new(collector),
                 is_registered: Mutex::new(app_settings.webhook_id.is_some()),
+                registration_lock: Mutex::new(()),
             });
 
             app.manage(state.clone());
@@ -321,6 +323,7 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
     }
 
     let mut cycle_count: u64 = 0;
+    let mut next_registration_attempt = tokio::time::Instant::now();
 
     loop {
         let interval_secs = {
@@ -381,6 +384,26 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
             }
 
             cycle_count += 1;
+        } else if tokio::time::Instant::now() >= next_registration_attempt {
+            let configured = {
+                let settings = state.settings.lock().await;
+                !settings.server_url.is_empty() && !settings.access_token.is_empty()
+            };
+            if configured {
+                if let Ok(_guard) = state.registration_lock.try_lock() {
+                    if !*state.is_registered.lock().await {
+                        match crate::commands::register_device_inner(&state, &handle).await {
+                            Ok(()) => {
+                                log::info!("Background registration recovered");
+                                cycle_count = 0;
+                            }
+                            Err(error) => log::warn!("Background registration failed: {error}"),
+                        }
+                    }
+                }
+                next_registration_attempt =
+                    tokio::time::Instant::now() + tokio::time::Duration::from_secs(60);
+            }
         }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;

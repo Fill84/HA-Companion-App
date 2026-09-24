@@ -33,6 +33,7 @@ pub struct RegistrationResponse {
 
 #[derive(Debug, Clone, Serialize)]
 struct WebhookPayload {
+    protocol_version: u8,
     #[serde(rename = "type")]
     command_type: String,
     data: serde_json::Value,
@@ -92,6 +93,11 @@ impl HaClient {
             .map_err(|_| format!("{command} did not return a JSON acknowledgement"))?;
         if body.get("success") != Some(&serde_json::Value::Bool(true)) {
             return Err(format!("{command} was not acknowledged by Home Assistant").into());
+        }
+        if body.get("protocol_version").is_some()
+            && body.get("protocol_version") != Some(&serde_json::json!(1))
+        {
+            return Err(format!("{command} returned an unsupported protocol version").into());
         }
         Ok(())
     }
@@ -174,6 +180,7 @@ impl HaClient {
         let webhook_id = self.webhook_id.as_ref().ok_or("No webhook_id configured")?;
         let url = format!("{}/api/webhook/{}", self.base_url(), webhook_id);
         let payload = WebhookPayload {
+            protocol_version: 1,
             command_type: "update_registration".into(),
             data: serde_json::json!({
                 "device_name": registration.device_name,
@@ -255,6 +262,7 @@ impl HaClient {
         let url = format!("{}/api/webhook/{}", self.base_url(), webhook_id);
 
         let payload = WebhookPayload {
+            protocol_version: 1,
             command_type: "register_sensor".to_string(),
             data: serde_json::to_value(SensorRegistration {
                 sensor_unique_id: sensor.unique_id.clone(),
@@ -313,6 +321,7 @@ impl HaClient {
             .collect();
 
         let payload = WebhookPayload {
+            protocol_version: 1,
             command_type: "update_sensor_states".to_string(),
             data: serde_json::json!({
                 "sensors": sensor_updates,
@@ -342,6 +351,7 @@ impl HaClient {
         let webhook_id = self.webhook_id.as_ref().ok_or("No webhook_id configured")?;
         let url = format!("{}/api/webhook/{}", self.base_url(), webhook_id);
         let payload = WebhookPayload {
+            protocol_version: 1,
             command_type: "device_offline".to_string(),
             data: serde_json::json!({}),
         };
@@ -367,6 +377,7 @@ impl HaClient {
 
         // Send a minimal payload to check if webhook exists
         let payload = WebhookPayload {
+            protocol_version: 1,
             command_type: "update_sensor_states".to_string(),
             data: serde_json::json!({"sensors": [], "update_interval": self.update_interval}),
         };
@@ -392,12 +403,14 @@ mod tests {
     #[test]
     fn device_offline_payload_serializes_with_expected_shape() {
         let payload = WebhookPayload {
+            protocol_version: 1,
             command_type: "device_offline".to_string(),
             data: serde_json::json!({}),
         };
         let s = serde_json::to_string(&payload).expect("serialize");
         assert!(s.contains(r#""type":"device_offline""#), "payload was: {s}");
         assert!(s.contains(r#""data":{}"#), "payload was: {s}");
+        assert!(s.contains(r#""protocol_version":1"#), "payload was: {s}");
     }
 
     #[tokio::test]
@@ -406,6 +419,8 @@ mod tests {
             ("200 OK", "", false),
             ("200 OK", r#"{"success":false}"#, false),
             ("200 OK", r#"{"success":true}"#, true),
+            ("200 OK", r#"{"success":true,"protocol_version":1}"#, true),
+            ("200 OK", r#"{"success":true,"protocol_version":2}"#, false),
             ("410 Gone", r#"{"success":false}"#, false),
         ] {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

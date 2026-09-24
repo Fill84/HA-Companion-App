@@ -102,6 +102,7 @@ pub async fn save_settings(
     if let Some(preferences) = enabled_sensors {
         next.enabled_sensors = preferences;
     }
+    let provider_changed = next.cpu_temperature_provider != settings.cpu_temperature_provider;
     if url_changed || token_changed {
         next.webhook_id = None;
     }
@@ -144,7 +145,7 @@ pub async fn save_settings(
     }
 
     drop(settings);
-    if preferences_changed && !url_changed && !token_changed {
+    if (preferences_changed || provider_changed) && !url_changed && !token_changed {
         sync_all_sensors(state.inner().clone(), &app).await?;
     }
 
@@ -219,11 +220,19 @@ pub async fn register_device(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let all_sensors = crate::collect_snapshot(state.inner().clone(), true).await?;
+    let _guard = state.registration_lock.lock().await;
+    register_device_inner(&state, &app).await
+}
+
+pub(crate) async fn register_device_inner(
+    state: &Arc<AppState>,
+    app: &tauri::AppHandle,
+) -> Result<(), String> {
+    let all_sensors = crate::collect_snapshot(state.clone(), true).await?;
     let mut settings = state.settings.lock().await;
     let mut ha_client = state.ha_client.lock().await;
 
-    match crate::registration::register_device(&mut settings, &mut ha_client, &all_sensors, &app)
+    match crate::registration::register_device(&mut settings, &mut ha_client, &all_sensors, app)
         .await
     {
         Ok(_) => (),
@@ -283,6 +292,7 @@ pub async fn reregister_device(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    let _guard = state.registration_lock.lock().await;
     // Drop in-memory + persisted webhook so register_device starts fresh.
     let (server_url, access_token) = {
         let mut settings = state.settings.lock().await;
@@ -295,7 +305,7 @@ pub async fn reregister_device(
     }
     *state.is_registered.lock().await = false;
 
-    register_device(state, app).await
+    register_device_inner(&state, &app).await
 }
 
 /// Connection status reported back to the UI.
@@ -369,12 +379,12 @@ pub async fn check_connection(
 /// Shared with sensor_update_loop in lib.rs.
 pub async fn mark_unregistered(state: &Arc<AppState>, app: &tauri::AppHandle, reason: &str) {
     log::warn!("Marking device unregistered: {}", reason);
-    *state.is_registered.lock().await = false;
     let mut settings = state.settings.lock().await;
     if let Err(e) = settings.clear_webhook(app) {
         log::error!("Failed to persist unregistered state: {}", e);
     }
     drop(settings);
+    *state.is_registered.lock().await = false;
     let _ = app.emit("registration-lost", reason.to_string());
 }
 
