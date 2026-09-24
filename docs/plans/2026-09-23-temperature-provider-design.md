@@ -2,7 +2,7 @@
 
 Status: ontwerp voor de door de gebruiker gekozen richting, 23 september 2026. De audit is goedgekeurd als onderzoeksbasis; deze wijziging behandelt alleen WinRing0 en CPU-temperatuur, niet alle auditbevindingen.
 
-De lokale implementatie en de nog open praktijkvalidatie zijn vastgelegd in [het verificatieverslag](2026-09-23-temperature-provider-verification.md). De actuele bouw-/gebruikersinstructies staan in [hwmon-helper/README.md](../../hwmon-helper/README.md).
+De lokale implementatie en de toen open praktijkvalidatie zijn vastgelegd in [het historische verificatieverslag](2026-09-23-temperature-provider-verification.md). De actuele richting staat in de [geïntegreerde sensorspecificatie](../specs/2026-09-24-integrated-sensors.md).
 
 Op verzoek van de gebruiker is de optionele helper daarna naar .NET 10 LTS gemigreerd; zie [migratie en verificatie](2026-09-24-dotnet10-migration.md).
 

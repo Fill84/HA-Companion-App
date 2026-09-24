@@ -2,7 +2,7 @@
 
 Bijgewerkt: 24 september 2026. Dit is de uitvoeringsstatus bij de [specificatie](../specs/2026-09-24-project-recovery.md), geen releaseverklaring. `Gedeeltelijk` betekent dat code bestaat maar ten minste één acceptatieproef uit de audit nog ontbreekt. Geen van de 54 auditpunten krijgt op basis van alleen een unit-test de status volledig afgerond.
 
-Nieuwe architectuureis: de gebruiker heeft de extern geïnstalleerde PawnIO-/LibreHardwareMonitor-helperroute vervangen door [volledig geïntegreerde sensortoegang](../specs/2026-09-24-integrated-sensors.md). Het [nieuwe plan](2026-09-24-integrated-sensors.md) en de gepinde driverartefacten zijn voorbereid; de app gebruikt momenteel **nog de oude helperroute**. De geïntegreerde installatie, service, IPC en echte temperatuurproef zijn open releasepoorten. Oudere Windows-providervermeldingen hieronder beschrijven uitsluitend de huidige tussenstand.
+Nieuwe architectuureis: de gebruiker heeft de extern geïnstalleerde PawnIO-/LibreHardwareMonitor-helperroute vervangen door [volledig geïntegreerde sensortoegang](../specs/2026-09-24-integrated-sensors.md). De **broncode** van de app gebruikt nu de eigen Rust-service via lokale IPC; de NSIS-build bevat eigen service en gesigneerde driverartefacten. De **nog draaiende debug-app** op `phill-pc` is een oude binary en gebruikt de oude helperroute. Driverinstallatie, echte metingen, twee-hosttest, AMD en Linux/macOS blijven open releasepoorten. Oudere Windows-providervermeldingen hieronder zijn historische proefresultaten, geen bewijs voor de nieuwe route.
 
 | Status | Audit-ID's | Nog nodig voor afronding |
 |---|---|---|

@@ -9,7 +9,7 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
   - Native system tray met context menu (Tonen/Verbergen, Instellingen, Afsluiten)
   - Auto-login in HA dashboard via access token injectie
   - Instelbare taal (EN/NL), settings modal, sensor enable/disable
-  - Beoogde release-artifacts: Windows (.exe/.msi), macOS (.dmg), Linux (.deb/.rpm/.AppImage); de platformmatrix is nog niet volledig gevalideerd
+  - Beoogde release-artifacts: Windows NSIS (.exe), macOS (.dmg), Linux (.deb/.rpm/.AppImage); de platformmatrix is nog niet volledig gevalideerd
 
 - **Home Assistant Integratie:**
   - Custom component voor device registry, dynamische sensors, webhook-based updates
@@ -58,15 +58,15 @@ HA-Companion-App/
 ```
 
 ## Cross-platform
-- Windows: NSIS installer (.exe), MSI
+- Windows: NSIS installer (.exe)
 - macOS: DMG (.dmg)
 - Linux: DEB (.deb), RPM (.rpm), AppImage
 
 ## CPU-temperatuur en hostbelasting
 
-De basisapp bevat geen WinRing0-driver meer. CPU-gebruik, frequentie en model werken zonder een extra temperatuurdriver. Voor Windows-CPU-temperatuur is een expliciet inschakelbare provider beschikbaar; de meegeleverde helper bevat zijn eigen .NET 10-runtime en vereist voor echte metingen alleen een afzonderlijk geïnstalleerde officiële PawnIO-driver. Zonder die provider is de temperatuur `unknown`. De app installeert of beheert geen kernel-driver.
+De basisapp bevat geen WinRing0-driver. CPU-gebruik, frequentie en model werken zonder temperatuurdriver. De Windows NSIS-installer biedt optioneel de meegeleverde, Microsoft-ondertekende PawnIO-driver en onze eigen Rust-sensorservice aan; de gewone app vraagt alleen een beperkte lokale momentopname aan. Er is geen .NET-helper of aparte sensorapp. Zonder ondersteunde meting blijft CPU-temperatuur `unknown`. Deze nieuwe route is nog in ontwikkeling en is pas releasegereed na fysieke installatie- en meetproeven.
 
-De collector levert één snapshot per meetronde en hergebruikt de basis-systeemmetingen. De optionele helper blijft actief tijdens gebruik en leest op verzoek. Zie [providerdocumentatie, bouwinstructies en migratiegrenzen](hwmon-helper/README.md) en de [sensor-supportmatrix](docs/specs/2026-09-24-sensor-support.md). Bestaande WinRing0-services worden niet automatisch verwijderd; een upgrade van een oude installatie vraagt nog migratievalidatie.
+De collector levert één snapshot per meetronde en hergebruikt de basis-systeemmetingen. Zie de [geïntegreerde sensorspecificatie](docs/specs/2026-09-24-integrated-sensors.md), het [uitvoeringsplan](docs/plans/2026-09-24-integrated-sensors.md) en de [sensor-supportmatrix](docs/specs/2026-09-24-sensor-support.md). Bestaande WinRing0-services worden niet automatisch verwijderd; een upgrade van een oude installatie vraagt nog migratievalidatie.
 
 ## License
 Zie LICENSE.md voor licentievoorwaarden.
