@@ -43,6 +43,8 @@ Lees de [volledige installatie-, upgrade-, dashboard- en herstelgids](https://gi
 ## Bouw en releasecontrole
 De desktop gebruikt Yarn 1.22.22 met één `yarn.lock`; een schone installatie is `cd desktop-app && corepack yarn install --frozen-lockfile`. Pull requests en pushes naar `main` draaien de desktopverificatie. Een release start uitsluitend via `workflow_dispatch` op `main` met de volledige, gepushte 40-tekens commit-SHA uit de afzonderlijke `Fill84/ha-integration`-repository. `package.json`, `Cargo.toml` en `tauri.conf.json` moeten dezelfde desktopversie bevatten; de release bevat een manifest met beide broncommits en SHA-256-hashes van alle artifacts. De daadwerkelijke platform-, installer- en HA-compatibiliteitsproeven zijn nog releasevoorwaarden. Zie de [uitvoeringsstatus](docs/plans/2026-09-24-verificatiestatus.md).
 
+De zelfgehoste Forgejo-runner met label `windows-latest` moet vóór de workflow de [Microsoft C++ Build Tools met de workload Desktop development with C++](https://v2.tauri.app/start/prerequisites/#microsoft-c-build-tools) en een Windows SDK hebben. De workflow gebruikt een al geconfigureerde `cl.exe`/`link.exe`-omgeving of laadt die via Visual Studio `vswhere.exe` en `vcvars64.bat`. Ontbreken zowel de bouwomgeving als `vswhere.exe`, dan moet de runnerbeheerder de workload op de **runnerhost** installeren en de runnerdienst opnieuw starten; het aanpassen van de app of de Rust-toolchain kan de ontbrekende Windows-linker niet vervangen. De Forgejo-verificatie pusht geen publieke release.
+
 ## Projectstructuur
 ```
 HA-Companion-App/
