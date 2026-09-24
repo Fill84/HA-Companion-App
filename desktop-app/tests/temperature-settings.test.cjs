@@ -56,16 +56,16 @@ test('saved token stays outside the settings view and a blank field keeps it', a
 
 test('Settings shows the running app version and the connected integration version', async () => {
     const ui = screen({
-        app_version: '1.0.6', integration_version: '1.0.11', is_registered: true,
+        app_version: '1.0.5', integration_version: '1.0.11', is_registered: true,
     });
     await ui.context.openSettings();
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(ui.document.getElementById('settings-app-version').textContent, 'v1.0.6');
+    assert.equal(ui.document.getElementById('settings-app-version').textContent, 'v1.0.5');
     assert.equal(ui.document.getElementById('settings-integration-version').textContent, 'v1.0.11');
 });
 
 test('Older integrations without version metadata show unknown', async () => {
-    const ui = screen({ app_version: '1.0.6', is_registered: true });
+    const ui = screen({ app_version: '1.0.5', is_registered: true });
     await ui.context.openSettings();
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(ui.document.getElementById('settings-integration-version').textContent, 'version_unknown');
