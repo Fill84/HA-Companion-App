@@ -30,8 +30,8 @@ jobs:
         working-directory: desktop-app
         run: |
           yarn install --frozen-lockfile
-          node --test tests/*.cjs
           node build-web.js
+          node --test tests/*.cjs
       - name: Check Rust formatting and behavior
         working-directory: desktop-app/src-tauri
         run: |

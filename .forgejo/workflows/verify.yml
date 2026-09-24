@@ -23,14 +23,14 @@ jobs:
         working-directory: desktop-app
         shell: pwsh
         run: yarn install --frozen-lockfile
-      - name: Test frontend behavior
-        working-directory: desktop-app
-        shell: pwsh
-        run: node --test (Get-ChildItem -LiteralPath tests -Filter '*.cjs' -File | ForEach-Object FullName)
       - name: Build web assets
         working-directory: desktop-app
         shell: pwsh
         run: node build-web.js
+      - name: Test frontend behavior
+        working-directory: desktop-app
+        shell: pwsh
+        run: node --test (Get-ChildItem -LiteralPath tests -Filter '*.cjs' -File | ForEach-Object FullName)
       - name: Check Rust formatting
         working-directory: desktop-app/src-tauri
         shell: pwsh
@@ -92,14 +92,14 @@ jobs:
         working-directory: desktop-app
         shell: bash
         run: yarn install --frozen-lockfile
-      - name: Test frontend behavior
-        working-directory: desktop-app
-        shell: bash
-        run: node --test tests/*.cjs
       - name: Build web assets
         working-directory: desktop-app
         shell: bash
         run: node build-web.js
+      - name: Test frontend behavior
+        working-directory: desktop-app
+        shell: bash
+        run: node --test tests/*.cjs
       - name: Check Rust formatting
         working-directory: desktop-app/src-tauri
         shell: bash
