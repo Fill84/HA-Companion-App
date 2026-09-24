@@ -1,9 +1,16 @@
 name: Cross-platform Release
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      integration_commit:
+        description: Full 40-character commit SHA from Fill84/ha-integration
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   version:
@@ -18,6 +25,8 @@ jobs:
           fetch-tags: true
       - name: Read release version from package.json
         id: get_version
+        env:
+          INTEGRATION_COMMIT: ${{ inputs.integration_commit }}
         run: |
           # Single source of truth: desktop-app/package.json. Bump it in the
           # commit that you want released. The workflow refuses to overwrite
@@ -26,6 +35,16 @@ jobs:
           VERSION=$(node -p "require('./desktop-app/package.json').version")
           if [ -z "$VERSION" ]; then
             echo "ERROR: could not read version from desktop-app/package.json"
+            exit 1
+          fi
+          NATIVE_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('desktop-app/src-tauri/Cargo.toml', 'rb'))['package']['version'])")
+          CONFIG_VERSION=$(node -p "require('./desktop-app/src-tauri/tauri.conf.json').version")
+          if [ "$VERSION" != "$NATIVE_VERSION" ] || [ "$VERSION" != "$CONFIG_VERSION" ]; then
+            echo "ERROR: package.json ($VERSION), Cargo.toml ($NATIVE_VERSION), and tauri.conf.json ($CONFIG_VERSION) must match"
+            exit 1
+          fi
+          if ! [[ "$INTEGRATION_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "ERROR: integration_commit must be a full lowercase commit SHA"
             exit 1
           fi
           if git rev-parse --verify --quiet "refs/tags/$VERSION" >/dev/null; then
@@ -41,13 +60,16 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: yarn
+          cache-dependency-path: desktop-app/yarn.lock
+      - run: corepack enable
       - uses: dtolnay/rust-toolchain@stable
-
-      - name: Update version in tauri.conf.json
-        run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version='${{ needs.version.outputs.version }}';fs.writeFileSync(f,JSON.stringify(c,null,4))"
 
       - name: Import code signing certificate
         env:
@@ -72,15 +94,32 @@ jobs:
         shell: pwsh
         run: |
           $conf = Get-Content desktop-app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json -Depth 10
-          $conf.bundle.windows.certificateThumbprint = $env:CERTIFICATE_THUMBPRINT
+          $conf.bundle.windows | Add-Member -NotePropertyName "certificateThumbprint" -NotePropertyValue $env:CERTIFICATE_THUMBPRINT -Force
           $conf.bundle.windows | Add-Member -NotePropertyName "digestAlgorithm" -NotePropertyValue "sha256" -Force
           $conf.bundle.windows | Add-Member -NotePropertyName "timestampUrl" -NotePropertyValue "http://timestamp.digicert.com" -Force
           $conf | ConvertTo-Json -Depth 10 | Set-Content desktop-app/src-tauri/tauri.conf.json
 
+      - name: Verify desktop contracts and dependencies
+        shell: pwsh
+        run: |
+          cd desktop-app
+          yarn install --frozen-lockfile
+          yarn audit --level moderate
+          node --test tests/*.cjs
+          cd src-tauri
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --lib
+          cargo install cargo-audit --version 0.22.2 --locked
+          # battery 0.7.8 references nix 0.19 only on FreeBSD/DragonFlyBSD.
+          # Neither OS is in this release target matrix; Linux/macOS/Windows
+          # cargo tree -i nix@0.19.1 contains no executable dependency.
+          cargo audit --ignore RUSTSEC-2021-0119
+
       - name: Build desktop app
         run: |
           cd desktop-app
-          yarn install
+          yarn install --frozen-lockfile
           yarn tauri:build
 
       - name: Stage Windows Artifacts
@@ -120,15 +159,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: yarn
+          cache-dependency-path: desktop-app/yarn.lock
+      - run: corepack enable
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Update version in tauri.conf.json
-        run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version='${{ needs.version.outputs.version }}';fs.writeFileSync(f,JSON.stringify(c,null,4))"
+      - name: Verify macOS desktop contracts
+        run: |
+          cd desktop-app
+          yarn install --frozen-lockfile
+          node --test tests/*.cjs
+          cd src-tauri
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --lib
 
       - name: Build desktop app
         run: |
           cd desktop-app
-          yarn install
+          yarn install --frozen-lockfile
           yarn tauri:build
       - name: Stage macOS Artifacts
         run: |
@@ -178,15 +227,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: yarn
+          cache-dependency-path: desktop-app/yarn.lock
+      - run: corepack enable
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Update version in tauri.conf.json
-        run: node -e "const fs=require('fs');const f='desktop-app/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version='${{ needs.version.outputs.version }}';fs.writeFileSync(f,JSON.stringify(c,null,4))"
+      - name: Verify Linux desktop contracts
+        run: |
+          cd desktop-app
+          yarn install --frozen-lockfile
+          node --test tests/*.cjs
+          cd src-tauri
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --lib
 
       - name: Build desktop app
         run: |
           cd desktop-app
-          yarn install
+          yarn install --frozen-lockfile
           yarn tauri:build
       - name: Stage Linux Artifacts
         run: |
@@ -209,7 +268,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Fill84/ha-integration
-          ref: main
+          ref: ${{ inputs.integration_commit }}
+          persist-credentials: false
+      - name: Verify integration source and manifest
+        shell: bash
+        env:
+          INTEGRATION_COMMIT: ${{ inputs.integration_commit }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$INTEGRATION_COMMIT"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('custom_components/desktop_app/manifest.json').read_text())
+          assert manifest['version']
+          print('Integration version:', manifest['version'])
+          PY
+      - name: Test integration contracts
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install pytest
+          .venv/bin/python -m pytest -q
       - name: Build integration zip
         run: |
           zip -r ha-integration.zip custom_components hacs.json README.md
@@ -241,10 +319,49 @@ jobs:
         with:
           name: ha-integration
           path: ha-integration
+      - name: Write reproducible source and artifact manifest
+        env:
+          DESKTOP_VERSION: ${{ needs.version.outputs.version }}
+          DESKTOP_COMMIT: ${{ github.sha }}
+          INTEGRATION_COMMIT: ${{ inputs.integration_commit }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          roots = ['windows-installers', 'macos-installers', 'linux-installers', 'ha-integration']
+          artifacts = {}
+          for root in roots:
+              for path in sorted(Path(root).rglob('*')):
+                  if path.is_file():
+                      digest = hashlib.sha256()
+                      with path.open('rb') as stream:
+                          for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                              digest.update(chunk)
+                      artifacts[path.as_posix()] = digest.hexdigest()
+          if not artifacts or not any(path.endswith('ha-integration.zip') for path in artifacts):
+              raise SystemExit('Release artifacts are incomplete')
+          with ZipFile('ha-integration/ha-integration.zip') as archive:
+              integration_version = json.loads(
+                  archive.read('custom_components/desktop_app/manifest.json')
+              )['version']
+          manifest = {
+              'desktop_version': os.environ['DESKTOP_VERSION'],
+              'integration_version': integration_version,
+              'desktop_commit': os.environ['DESKTOP_COMMIT'],
+              'integration_commit': os.environ['INTEGRATION_COMMIT'],
+              'artifacts_sha256': artifacts,
+          }
+          Path('release-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
           # Source files (package.json etc.) are the source of truth, so the
           # workflow no longer pushes a "chore: set version" commit back to
           # main. Bump the version in your release commit; the workflow tags
@@ -257,5 +374,6 @@ jobs:
             linux-installers/rpm/*.rpm
             linux-installers/appimage/*.AppImage
             ha-integration/ha-integration.zip
+            release-manifest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
