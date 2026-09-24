@@ -209,7 +209,7 @@ async fn sync_all_sensors(state: Arc<AppState>, app: &tauri::AppHandle) -> Resul
         return Ok(());
     }
     let sensors = crate::collect_snapshot(state.clone(), true).await?;
-    let client = state.ha_client.lock().await;
+    let mut client = state.ha_client.lock().await;
     let result = async {
         client.register_sensors(&sensors).await?;
         client.update_sensors(&sensors, "all").await
@@ -217,6 +217,9 @@ async fn sync_all_sensors(state: Arc<AppState>, app: &tauri::AppHandle) -> Resul
     .await;
     if let Err(error) = result {
         let reason = error.to_string();
+        if crate::webhook_http_status(&reason) == Some(409) {
+            client.forget_registered_sensors();
+        }
         let failed_webhook = client.webhook_id().unwrap_or_default().to_owned();
         drop(client);
         if crate::is_webhook_dead(&reason) {
@@ -226,6 +229,7 @@ async fn sync_all_sensors(state: Arc<AppState>, app: &tauri::AppHandle) -> Resul
             "Settings saved, but Home Assistant sensor sync failed: {reason}"
         ));
     }
+    client.remember_registered_sensors(&sensors);
     Ok(())
 }
 
@@ -344,10 +348,13 @@ pub async fn update_sensors_now(
 
     let sensor_data = crate::collect_snapshot(state.inner().clone(), false).await?;
 
-    let ha_client = state.ha_client.lock().await;
+    let mut ha_client = state.ha_client.lock().await;
     if let Err(e) = ha_client.update_sensors(&sensor_data, "dynamic").await {
         let err_str = e.to_string();
         log::error!("[HA] Update sensors failed: {}", err_str);
+        if crate::webhook_http_status(&err_str) == Some(409) {
+            ha_client.forget_registered_sensors();
+        }
         let failed_webhook = ha_client.webhook_id().unwrap_or_default().to_owned();
         drop(ha_client);
         if crate::is_webhook_dead(&err_str) {
@@ -378,6 +385,7 @@ pub async fn reregister_device(
     {
         let mut ha_client = state.ha_client.lock().await;
         ha_client.update_config(server_url, access_token);
+        ha_client.clear_webhook_id();
     }
     *state.is_registered.lock().await = false;
 
@@ -477,6 +485,7 @@ pub async fn mark_unregistered(
         log::error!("Failed to persist unregistered state: {}", e);
     }
     drop(settings);
+    state.ha_client.lock().await.clear_webhook_id();
     *state.is_registered.lock().await = false;
     let _ = app.emit("registration-lost", reason.to_string());
 }

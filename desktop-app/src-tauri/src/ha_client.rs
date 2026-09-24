@@ -41,15 +41,62 @@ struct WebhookPayload {
 
 #[derive(Debug, Clone, Serialize)]
 struct SensorRegistration {
+    #[serde(flatten)]
+    metadata: SensorMetadata,
+    sensor_state: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct SensorMetadata {
     sensor_unique_id: String,
     sensor_name: String,
     sensor_type: String,
-    sensor_state: serde_json::Value,
     sensor_device_class: Option<String>,
     sensor_unit_of_measurement: Option<String>,
     sensor_state_class: Option<String>,
     sensor_icon: Option<String>,
     update_at_interval: bool,
+}
+
+impl From<&SensorValue> for SensorMetadata {
+    fn from(sensor: &SensorValue) -> Self {
+        Self {
+            sensor_unique_id: sensor.unique_id.clone(),
+            sensor_name: sensor.name.clone(),
+            sensor_type: sensor.sensor_type.clone(),
+            sensor_device_class: sensor.device_class.clone(),
+            sensor_unit_of_measurement: sensor.unit_of_measurement.clone(),
+            sensor_state_class: sensor.state_class.clone(),
+            sensor_icon: sensor.icon.clone(),
+            update_at_interval: sensor.update_at_interval,
+        }
+    }
+}
+
+fn sensor_descriptors(sensors: &[SensorValue]) -> Vec<SensorMetadata> {
+    let mut descriptors: Vec<_> = sensors.iter().map(SensorMetadata::from).collect();
+    descriptors.sort_unstable_by(|left, right| left.sensor_unique_id.cmp(&right.sensor_unique_id));
+    descriptors
+}
+
+fn changed_sensors<'a>(
+    sensors: &'a [SensorValue],
+    registered: Option<&[SensorMetadata]>,
+) -> Vec<&'a SensorValue> {
+    sensors
+        .iter()
+        .filter(|sensor| {
+            let descriptor = SensorMetadata::from(*sensor);
+            !registered.is_some_and(|known| {
+                known
+                    .binary_search_by(|item| {
+                        item.sensor_unique_id.cmp(&descriptor.sensor_unique_id)
+                    })
+                    .ok()
+                    .is_some_and(|index| known[index] == descriptor)
+            })
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -66,6 +113,7 @@ pub struct HaClient {
     access_token: String,
     webhook_id: Option<String>,
     update_interval: u64,
+    registered_descriptors: Option<Vec<SensorMetadata>>,
 }
 
 impl HaClient {
@@ -114,12 +162,18 @@ impl HaClient {
             access_token: access_token.trim().to_string(),
             webhook_id,
             update_interval: 60,
+            registered_descriptors: None,
         }
     }
 
     pub fn update_config(&mut self, server_url: String, access_token: String) {
-        self.server_url = normalize_server_url(&server_url);
-        self.access_token = access_token.trim().to_string();
+        let server_url = normalize_server_url(&server_url);
+        let access_token = access_token.trim().to_string();
+        if self.server_url != server_url || self.access_token != access_token {
+            self.registered_descriptors = None;
+        }
+        self.server_url = server_url;
+        self.access_token = access_token;
     }
 
     /// Base URL for API calls (no trailing slash, no trailing /api)
@@ -158,6 +212,9 @@ impl HaClient {
     }
 
     pub fn set_webhook_id(&mut self, webhook_id: String) {
+        if self.webhook_id.as_deref() != Some(webhook_id.as_str()) {
+            self.registered_descriptors = None;
+        }
         self.webhook_id = Some(webhook_id);
     }
 
@@ -167,6 +224,7 @@ impl HaClient {
 
     pub fn clear_webhook_id(&mut self) {
         self.webhook_id = None;
+        self.registered_descriptors = None;
     }
 
     pub fn webhook_id(&self) -> Option<&str> {
@@ -265,15 +323,8 @@ impl HaClient {
             protocol_version: 1,
             command_type: "register_sensor".to_string(),
             data: serde_json::to_value(SensorRegistration {
-                sensor_unique_id: sensor.unique_id.clone(),
-                sensor_name: sensor.name.clone(),
-                sensor_type: sensor.sensor_type.clone(),
+                metadata: SensorMetadata::from(sensor),
                 sensor_state: sensor.state.clone(),
-                sensor_device_class: sensor.device_class.clone(),
-                sensor_unit_of_measurement: sensor.unit_of_measurement.clone(),
-                sensor_state_class: sensor.state_class.clone(),
-                sensor_icon: sensor.icon.clone(),
-                update_at_interval: sensor.update_at_interval,
             })?,
         };
 
@@ -298,6 +349,29 @@ impl HaClient {
             self.register_sensor(sensor).await?;
         }
         Ok(())
+    }
+
+    pub async fn register_sensors_if_changed(
+        &mut self,
+        sensors: &[SensorValue],
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let descriptors = sensor_descriptors(sensors);
+        if self.registered_descriptors.as_ref() == Some(&descriptors) {
+            return Ok(false);
+        }
+        for sensor in changed_sensors(sensors, self.registered_descriptors.as_deref()) {
+            self.register_sensor(sensor).await?;
+        }
+        self.registered_descriptors = Some(descriptors);
+        Ok(true)
+    }
+
+    pub fn remember_registered_sensors(&mut self, sensors: &[SensorValue]) {
+        self.registered_descriptors = Some(sensor_descriptors(sensors));
+    }
+
+    pub fn forget_registered_sensors(&mut self) {
+        self.registered_descriptors = None;
     }
 
     /// Batch update sensor states
@@ -397,6 +471,7 @@ impl HaClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
@@ -411,6 +486,51 @@ mod tests {
         assert!(s.contains(r#""type":"device_offline""#), "payload was: {s}");
         assert!(s.contains(r#""data":{}"#), "payload was: {s}");
         assert!(s.contains(r#""protocol_version":1"#), "payload was: {s}");
+    }
+
+    #[test]
+    fn registration_cache_ignores_measurements_but_detects_metadata_and_webhook_changes() {
+        let mut sensor = SensorValue {
+            unique_id: "cpu_usage".into(),
+            name: "CPU Usage".into(),
+            state: serde_json::json!(15),
+            sensor_type: "sensor".into(),
+            device_class: None,
+            unit_of_measurement: Some("%".into()),
+            state_class: Some("measurement".into()),
+            icon: Some("mdi:cpu-64-bit".into()),
+            attributes: HashMap::new(),
+            update_at_interval: true,
+        };
+        let mut client = HaClient::new(
+            "https://ha.example".into(),
+            "token".into(),
+            Some("old".into()),
+        );
+        client.remember_registered_sensors(&[sensor.clone()]);
+        sensor.state = serde_json::json!(42);
+        sensor
+            .attributes
+            .insert("source".into(), serde_json::json!("new"));
+        assert_eq!(
+            client.registered_descriptors,
+            Some(sensor_descriptors(&[sensor.clone()]))
+        );
+        assert!(
+            changed_sensors(&[sensor.clone()], client.registered_descriptors.as_deref()).is_empty()
+        );
+
+        sensor.name = "Processor Usage".into();
+        assert_eq!(
+            changed_sensors(&[sensor.clone()], client.registered_descriptors.as_deref()).len(),
+            1
+        );
+        assert_ne!(
+            client.registered_descriptors,
+            Some(sensor_descriptors(&[sensor]))
+        );
+        client.set_webhook_id("new".into());
+        assert!(client.registered_descriptors.is_none());
     }
 
     #[tokio::test]

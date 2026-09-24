@@ -151,6 +151,7 @@ pub async fn register_device(
         ha_client.clear_webhook_id();
         return Err(format!("Failed to save registration: {error}"));
     }
+    ha_client.remember_registered_sensors(all_sensors);
     log::info!("Device registration and initial sensor update succeeded");
     Ok(webhook_id)
 }

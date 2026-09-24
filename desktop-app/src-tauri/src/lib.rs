@@ -395,9 +395,10 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                         continue;
                     }
                 };
-                let ha_client = state.ha_client.lock().await;
-                if let Err(e) = ha_client.register_sensors(&all_sensors).await {
+                let mut ha_client = state.ha_client.lock().await;
+                if let Err(e) = ha_client.register_sensors_if_changed(&all_sensors).await {
                     log::error!("Failed to re-register sensors: {}", e);
+                    cycle_count = 9;
                     let err_str = e.to_string();
                     let failed_webhook = ha_client.webhook_id().unwrap_or_default().to_owned();
                     drop(ha_client);
@@ -405,10 +406,17 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                         mark_unregistered(&state, &handle, &failed_webhook, &err_str).await;
                     }
                 } else {
-                    log::debug!("Re-registered {} sensors with HA", all_sensors.len());
+                    log::debug!(
+                        "Sensor metadata synchronized for {} sensors",
+                        all_sensors.len()
+                    );
                     if let Err(e) = ha_client.update_sensors(&all_sensors, "all").await {
                         log::error!("Failed to update all sensors: {}", e);
                         let err_str = e.to_string();
+                        if webhook_http_status(&err_str) == Some(409) {
+                            ha_client.forget_registered_sensors();
+                            cycle_count = 9;
+                        }
                         let failed_webhook = ha_client.webhook_id().unwrap_or_default().to_owned();
                         drop(ha_client);
                         if is_webhook_dead(&err_str) {
@@ -426,10 +434,14 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                     }
                 };
 
-                let ha_client = state.ha_client.lock().await;
+                let mut ha_client = state.ha_client.lock().await;
                 if let Err(e) = ha_client.update_sensors(&sensor_data, "dynamic").await {
                     log::error!("Failed to update sensors: {}", e);
                     let err_str = e.to_string();
+                    if webhook_http_status(&err_str) == Some(409) {
+                        ha_client.forget_registered_sensors();
+                        cycle_count = 9;
+                    }
                     let failed_webhook = ha_client.webhook_id().unwrap_or_default().to_owned();
                     drop(ha_client);
                     if is_webhook_dead(&err_str) {
