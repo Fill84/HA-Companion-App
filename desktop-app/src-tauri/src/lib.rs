@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{
     image::Image,
@@ -30,6 +31,7 @@ pub struct AppState {
     pub collector: Mutex<SensorCollector>,
     pub is_registered: Mutex<bool>,
     pub registration_lock: Mutex<()>,
+    pub shutting_down: AtomicBool,
 }
 
 struct TrayItems {
@@ -173,6 +175,7 @@ pub fn run(dev_mode: bool) {
                 collector: Mutex::new(collector),
                 is_registered: Mutex::new(app_settings.webhook_id.is_some()),
                 registration_lock: Mutex::new(()),
+                shutting_down: AtomicBool::new(false),
             });
 
             app.manage(state.clone());
@@ -184,6 +187,7 @@ pub fn run(dev_mode: bool) {
                 let main_window = app.get_window("main").expect("main window");
                 shutdown_hook::install(&main_window, move || {
                     let state = hook_state.clone();
+                    state.shutting_down.store(true, Ordering::SeqCst);
                     // Spawn into a Tokio runtime, block briefly so the OS
                     // shutdown handshake waits for the HTTP POST.
                     let _ = std::thread::spawn(move || {
@@ -329,6 +333,7 @@ pub fn run(dev_mode: bool) {
                 // Phase 3: User chose "Quit" from the tray. Best-effort send
                 // device_offline (2s timeout) so HA flips offline immediately.
                 let state: Arc<AppState> = app_handle.state::<Arc<AppState>>().inner().clone();
+                state.shutting_down.store(true, Ordering::SeqCst);
                 let _ = std::thread::spawn(move || {
                     if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
                         .enable_all()
@@ -378,6 +383,9 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
     let mut next_registration_attempt = tokio::time::Instant::now();
 
     loop {
+        if state.shutting_down.load(Ordering::SeqCst) {
+            break;
+        }
         let interval_secs = {
             let settings = state.settings.lock().await;
             settings.update_interval
@@ -396,6 +404,9 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                     }
                 };
                 let mut ha_client = state.ha_client.lock().await;
+                if state.shutting_down.load(Ordering::SeqCst) {
+                    break;
+                }
                 if let Err(e) = ha_client.register_sensors_if_changed(&all_sensors).await {
                     log::error!("Failed to re-register sensors: {}", e);
                     cycle_count = 9;
@@ -406,6 +417,9 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                         mark_unregistered(&state, &handle, &failed_webhook, &err_str).await;
                     }
                 } else {
+                    if state.shutting_down.load(Ordering::SeqCst) {
+                        break;
+                    }
                     log::debug!(
                         "Sensor metadata synchronized for {} sensors",
                         all_sensors.len()
@@ -435,6 +449,9 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                 };
 
                 let mut ha_client = state.ha_client.lock().await;
+                if state.shutting_down.load(Ordering::SeqCst) {
+                    break;
+                }
                 if let Err(e) = ha_client.update_sensors(&sensor_data, "dynamic").await {
                     log::error!("Failed to update sensors: {}", e);
                     let err_str = e.to_string();
@@ -458,6 +475,9 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
             };
             if configured {
                 if let Ok(_guard) = state.registration_lock.try_lock() {
+                    if state.shutting_down.load(Ordering::SeqCst) {
+                        break;
+                    }
                     if !*state.is_registered.lock().await {
                         match crate::commands::register_device_inner(&state, &handle).await {
                             Ok(()) => {
