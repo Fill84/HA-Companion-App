@@ -11,6 +11,7 @@ fn assign_sensor_suffixes(
     map: &mut HashMap<String, String>,
     category: &str,
     physical_ids: &[Option<String>],
+    preserve_single_legacy: bool,
 ) -> Vec<Option<String>> {
     let prefix = format!("{category}:");
     let mut counts = HashMap::new();
@@ -27,7 +28,8 @@ fn assign_sensor_suffixes(
         .iter()
         .map(|physical_id| {
             let Some(id) = physical_id.as_deref().filter(|id| !id.is_empty()) else {
-                return (physical_ids.len() == 1 && !had_assignment).then(String::new);
+                return (preserve_single_legacy && physical_ids.len() == 1 && !had_assignment)
+                    .then(String::new);
             };
             if counts.get(id) != Some(&1) {
                 return None;
@@ -42,7 +44,7 @@ fn assign_sensor_suffixes(
                     .count();
                 return (aliases == 1).then(|| suffix.clone());
             }
-            let suffix = if physical_ids.len() == 1 && !had_assignment {
+            let suffix = if preserve_single_legacy && physical_ids.len() == 1 && !had_assignment {
                 String::new()
             } else {
                 let mut index = 1usize;
@@ -423,15 +425,17 @@ impl SensorCollector {
         // Disk sensors (dynamic)
         if self.is_enabled("disk_usage") {
             let disk_data = disk::collect();
-            for partition in &disk_data.partitions {
-                let safe_name = partition
-                    .mount_point
-                    .replace(['/', '\\', ':'], "_")
-                    .trim_matches('_')
-                    .to_string();
-
+            let identities: Vec<_> = disk_data
+                .partitions
+                .iter()
+                .map(|disk| disk.physical_id.clone())
+                .collect();
+            let suffixes =
+                assign_sensor_suffixes(&mut self.identity_map, "disk", &identities, false);
+            for (partition, suffix) in disk_data.partitions.iter().zip(suffixes) {
+                let Some(suffix) = suffix else { continue };
                 sensors.push(SensorValue {
-                    unique_id: format!("disk_usage_{}", safe_name),
+                    unique_id: format!("disk_usage{suffix}"),
                     name: format!("Disk Usage {}", partition.mount_point),
                     state: serde_json::json!(rounded(partition.usage_percent as f64, 1)),
                     sensor_type: "sensor".into(),
@@ -472,7 +476,7 @@ impl SensorCollector {
                 .iter()
                 .map(|gpu| gpu.physical_id.clone())
                 .collect();
-            let suffixes = assign_sensor_suffixes(&mut self.identity_map, "gpu", &identities);
+            let suffixes = assign_sensor_suffixes(&mut self.identity_map, "gpu", &identities, true);
             let reserved_suffixes: HashSet<_> = suffixes.iter().flatten().cloned().collect();
             for (i, (gpu_info, suffix)) in gpu_data.gpus.iter().zip(suffixes).enumerate() {
                 let Some(suffix) = suffix else { continue };
@@ -557,10 +561,17 @@ impl SensorCollector {
         // Network sensors (dynamic)
         if self.is_enabled("network") {
             let net_data = network::collect();
-            for iface in &net_data.interfaces {
-                let safe_name = iface.name.replace([' ', '/', '\\'], "_");
+            let identities: Vec<_> = net_data
+                .interfaces
+                .iter()
+                .map(|interface| interface.physical_id.clone())
+                .collect();
+            let suffixes =
+                assign_sensor_suffixes(&mut self.identity_map, "network", &identities, false);
+            for (iface, suffix) in net_data.interfaces.iter().zip(suffixes) {
+                let Some(suffix) = suffix else { continue };
                 sensors.push(SensorValue {
-                    unique_id: format!("network_rx_{}", safe_name),
+                    unique_id: format!("network_rx{suffix}"),
                     name: format!("Network RX {}", iface.name),
                     state: serde_json::json!(iface.received_bytes),
                     sensor_type: "sensor".into(),
@@ -578,7 +589,7 @@ impl SensorCollector {
                 });
 
                 sensors.push(SensorValue {
-                    unique_id: format!("network_tx_{}", safe_name),
+                    unique_id: format!("network_tx{suffix}"),
                     name: format!("Network TX {}", iface.name),
                     state: serde_json::json!(iface.transmitted_bytes),
                     sensor_type: "sensor".into(),
@@ -600,7 +611,8 @@ impl SensorCollector {
                 .iter()
                 .map(|bat| bat.physical_id.clone())
                 .collect();
-            let suffixes = assign_sensor_suffixes(&mut self.identity_map, "battery", &identities);
+            let suffixes =
+                assign_sensor_suffixes(&mut self.identity_map, "battery", &identities, true);
             for (i, (bat, suffix)) in battery_data.batteries.iter().zip(suffixes).enumerate() {
                 let Some(suffix) = suffix else { continue };
 
@@ -872,7 +884,8 @@ impl SensorCollector {
                 .iter()
                 .map(|display| display.physical_id.clone())
                 .collect();
-            let suffixes = assign_sensor_suffixes(&mut self.identity_map, "display", &identities);
+            let suffixes =
+                assign_sensor_suffixes(&mut self.identity_map, "display", &identities, true);
             for (i, (display, suffix)) in sys_info.displays.iter().zip(suffixes).enumerate() {
                 let Some(suffix) = suffix else { continue };
 
@@ -913,7 +926,7 @@ impl SensorCollector {
                 .iter()
                 .map(|gpu| gpu.physical_id.clone())
                 .collect();
-            let suffixes = assign_sensor_suffixes(&mut self.identity_map, "gpu", &identities);
+            let suffixes = assign_sensor_suffixes(&mut self.identity_map, "gpu", &identities, true);
             let reserved_suffixes: HashSet<_> = suffixes.iter().flatten().cloned().collect();
             for (i, (gpu_info, suffix)) in gpu_data.gpus.iter().zip(suffixes).enumerate() {
                 let Some(suffix) = suffix else { continue };
@@ -1079,25 +1092,86 @@ mod tests {
     #[test]
     fn physical_sensor_ids_survive_hotplug_and_reordering() {
         let mut map = HashMap::new();
-        let first = assign_sensor_suffixes(&mut map, "gpu", &[Some("pci:a".into())]);
+        let first = assign_sensor_suffixes(&mut map, "gpu", &[Some("pci:a".into())], true);
         assert_eq!(first, vec![Some(String::new())]);
         let added = assign_sensor_suffixes(
             &mut map,
             "gpu",
             &[Some("pci:a".into()), Some("pci:b".into())],
+            true,
         );
         assert_eq!(added, vec![Some(String::new()), Some("_stable_1".into())]);
         let reordered = assign_sensor_suffixes(
             &mut map,
             "gpu",
             &[Some("pci:b".into()), Some("pci:a".into())],
+            true,
         );
         assert_eq!(
             reordered,
             vec![Some("_stable_1".into()), Some(String::new())]
         );
-        let restored = assign_sensor_suffixes(&mut map, "gpu", &[Some("pci:b".into())]);
+        let restored = assign_sensor_suffixes(&mut map, "gpu", &[Some("pci:b".into())], true);
         assert_eq!(restored, vec![Some("_stable_1".into())]);
+    }
+
+    #[test]
+    fn network_and_disk_ids_never_claim_an_unverified_legacy_name() {
+        let mut map = HashMap::new();
+        let first = assign_sensor_suffixes(&mut map, "network", &[Some("mac:first".into())], false);
+        assert_eq!(first, vec![Some("_stable_1".into())]);
+        let replacement = assign_sensor_suffixes(
+            &mut map,
+            "network",
+            &[Some("mac:replacement".into())],
+            false,
+        );
+        assert_eq!(replacement, vec![Some("_stable_2".into())]);
+        let restored =
+            assign_sensor_suffixes(&mut map, "network", &[Some("mac:first".into())], false);
+        assert_eq!(restored, first);
+        assert_eq!(
+            assign_sensor_suffixes(&mut map, "disk", &[None], false),
+            vec![None]
+        );
+    }
+
+    #[test]
+    fn verified_legacy_suffix_survives_reordering_and_identity_collisions() {
+        let mut map = HashMap::from([
+            ("network:mac:aa:bb:cc:00:11:22".into(), "_Ethernet".into()),
+            ("disk:volume:known".into(), "_C".into()),
+        ]);
+        assert_eq!(
+            assign_sensor_suffixes(
+                &mut map,
+                "network",
+                &[Some("mac:aa:bb:cc:00:11:22".into())],
+                false
+            ),
+            vec![Some("_Ethernet".into())]
+        );
+        assert_eq!(
+            assign_sensor_suffixes(
+                &mut map,
+                "disk",
+                &[Some("volume:known".into()), Some("volume:new".into())],
+                false
+            ),
+            vec![Some("_C".into()), Some("_stable_1".into())]
+        );
+        assert_eq!(
+            assign_sensor_suffixes(
+                &mut map,
+                "network",
+                &[
+                    Some("mac:aa:bb:cc:00:11:22".into()),
+                    Some("mac:aa:bb:cc:00:11:22".into()),
+                ],
+                false
+            ),
+            vec![None, None]
+        );
     }
 
     #[test]
@@ -1107,6 +1181,7 @@ mod tests {
             &mut map,
             "gpu",
             &[Some("pci:a".into()), Some("pci:b".into())],
+            true,
         );
         assert_eq!(
             first_multi,
@@ -1116,11 +1191,15 @@ mod tests {
             assign_sensor_suffixes(
                 &mut map,
                 "gpu",
-                &[Some("pci:b".into()), Some("pci:b".into())]
+                &[Some("pci:b".into()), Some("pci:b".into())],
+                true,
             ),
             vec![None, None]
         );
-        assert_eq!(assign_sensor_suffixes(&mut map, "gpu", &[None]), vec![None]);
+        assert_eq!(
+            assign_sensor_suffixes(&mut map, "gpu", &[None], true),
+            vec![None]
+        );
     }
 
     #[test]

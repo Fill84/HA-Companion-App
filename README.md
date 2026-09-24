@@ -20,7 +20,7 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
 ## Installatie
 
 ### Desktop App
-1. Download een **gepubliceerde en geteste** release voor jouw platform van [GitHub Releases](https://github.com/Fill84/HA-Companion-App/releases). De lokale 1.0.8-build is een releasekandidaat; hij is nog niet gepubliceerd. Controleer versie en SHA-256 tegen het release-manifest. Een lokaal `target/`-bestand is geen actuele publieke release.
+1. Download een **gepubliceerde en geteste** release voor jouw platform van [GitHub Releases](https://github.com/Fill84/HA-Companion-App/releases). De volgende releasekandidaat wordt 1.0.5; hij is nog niet gepubliceerd. Controleer versie en SHA-256 tegen het release-manifest. Een lokaal `target/`-bestand is geen actuele publieke release.
 2. Installeer de app en start deze
 3. Vul je Home Assistant server URL en Long-Lived Access Token in bij de eerste setup
 4. De app registreert automatisch je device en sensors in Home Assistant. Op Windows installeert onze installer de meegeleverde, ondertekende PawnIO-driver en onze eigen Rust-sensorservice standaard als onderdeel van de app. Een aparte sensorapp of extra schakelaar is niet nodig.
