@@ -18,59 +18,71 @@ jobs:
           - os: ubuntu-latest
             shell: bash
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - run: corepack enable
+        shell: ${{ matrix.shell }}
       - uses: https://github.com/dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - name: Install Linux desktop libraries
         if: runner.os == 'Linux'
+        shell: bash
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
       - name: Install web dependencies
         working-directory: desktop-app
+        shell: ${{ matrix.shell }}
         run: yarn install --frozen-lockfile
       - name: Check frontend behavior
         working-directory: desktop-app
+        shell: ${{ matrix.shell }}
         run: node --test tests/*.cjs
       - name: Build web assets
         working-directory: desktop-app
+        shell: ${{ matrix.shell }}
         run: node build-web.js
       - name: Check Rust formatting
         working-directory: desktop-app/src-tauri
+        shell: ${{ matrix.shell }}
         run: cargo fmt --all -- --check
       - name: Check Rust lint
         working-directory: desktop-app/src-tauri
+        shell: ${{ matrix.shell }}
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Test Rust behavior
         working-directory: desktop-app/src-tauri
+        shell: ${{ matrix.shell }}
         run: cargo test --locked --lib
       - name: Verify bundled Windows driver
         if: runner.os == 'Windows'
+        shell: pwsh
         run: node desktop-app/verify-pawnio.js
       - name: Check Windows sensor-core formatting
         if: runner.os == 'Windows'
+        shell: pwsh
         run: cargo fmt --all --manifest-path desktop-app/sensor-core/Cargo.toml -- --check
       - name: Check Windows sensor-core lint
         if: runner.os == 'Windows'
+        shell: pwsh
         run: cargo clippy --locked --manifest-path desktop-app/sensor-core/Cargo.toml --all-targets -- -D warnings
       - name: Test Windows sensor-core
         if: runner.os == 'Windows'
+        shell: pwsh
         run: cargo test --locked --manifest-path desktop-app/sensor-core/Cargo.toml
       - name: Check Windows sensor-service formatting
         if: runner.os == 'Windows'
+        shell: pwsh
         run: cargo fmt --all --manifest-path desktop-app/sensor-service/Cargo.toml -- --check
       - name: Check Windows sensor-service lint
         if: runner.os == 'Windows'
+        shell: pwsh
         run: cargo clippy --locked --manifest-path desktop-app/sensor-service/Cargo.toml --all-targets -- -D warnings
       - name: Test Windows sensor-service
         if: runner.os == 'Windows'
+        shell: pwsh
         run: cargo test --locked --manifest-path desktop-app/sensor-service/Cargo.toml
