@@ -165,9 +165,10 @@ async fn sync_all_sensors(state: Arc<AppState>, app: &tauri::AppHandle) -> Resul
     .await;
     if let Err(error) = result {
         let reason = error.to_string();
+        let failed_webhook = client.webhook_id().unwrap_or_default().to_owned();
         drop(client);
         if reason.contains("404") || reason.contains("410") {
-            mark_unregistered(&state, app, &reason).await;
+            mark_unregistered(&state, app, &failed_webhook, &reason).await;
         }
         return Err(format!(
             "Settings saved, but Home Assistant sensor sync failed: {reason}"
@@ -274,9 +275,10 @@ pub async fn update_sensors_now(
     if let Err(e) = ha_client.update_sensors(&sensor_data, "dynamic").await {
         let err_str = e.to_string();
         log::error!("[HA] Update sensors failed: {}", err_str);
+        let failed_webhook = ha_client.webhook_id().unwrap_or_default().to_owned();
         drop(ha_client);
         if err_str.contains("404") || err_str.contains("410") {
-            mark_unregistered(&state, &app, &err_str).await;
+            mark_unregistered(&state, &app, &failed_webhook, &err_str).await;
         }
         return Err(format!("Update failed: {}", err_str));
     }
@@ -366,8 +368,15 @@ pub async fn check_connection(
         Err(error) => {
             let reason = error.to_string();
             if reason.contains("HTTP 404") || reason.contains("HTTP 410") {
+                let failed_webhook = ha_client.webhook_id().unwrap_or_default().to_owned();
                 drop(ha_client);
-                mark_unregistered(&state, &app, "startup health check: webhook dead").await;
+                mark_unregistered(
+                    &state,
+                    &app,
+                    &failed_webhook,
+                    "startup health check: webhook dead",
+                )
+                .await;
                 Ok(ConnectionStatus::WebhookDead)
             } else {
                 Ok(ConnectionStatus::Unreachable { reason })
@@ -377,9 +386,19 @@ pub async fn check_connection(
 }
 
 /// Shared with sensor_update_loop in lib.rs.
-pub async fn mark_unregistered(state: &Arc<AppState>, app: &tauri::AppHandle, reason: &str) {
-    log::warn!("Marking device unregistered: {}", reason);
+pub async fn mark_unregistered(
+    state: &Arc<AppState>,
+    app: &tauri::AppHandle,
+    failed_webhook: &str,
+    reason: &str,
+) {
+    let _guard = state.registration_lock.lock().await;
     let mut settings = state.settings.lock().await;
+    if settings.webhook_id.as_deref() != Some(failed_webhook) {
+        log::debug!("Ignoring failure from a previous webhook registration");
+        return;
+    }
+    log::warn!("Marking device unregistered: {}", reason);
     if let Err(e) = settings.clear_webhook(app) {
         log::error!("Failed to persist unregistered state: {}", e);
     }
