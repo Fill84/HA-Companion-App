@@ -64,8 +64,12 @@ async function handleSetup(e) {
     errorEl.classList.add("hidden");
     loadingEl.classList.remove("hidden");
 
+    let phase = "save";
     try {
-        if (!serverUrl || (!token && !canReuseSavedToken(serverUrl))) {
+        if (!serverUrl) {
+            throw new Error(t("error_server_url"));
+        }
+        if (!token && !canReuseSavedToken(serverUrl)) {
             throw new Error(t("error_token"));
         }
         // Save settings first
@@ -78,13 +82,18 @@ async function handleSetup(e) {
         });
 
         // Register device
+        phase = "register";
         await window.__TAURI__.core.invoke("register_device");
 
         // Success — open HA dashboard as child webview overlay
+        phase = "dashboard";
         await window.__TAURI__.core.invoke("load_dashboard");
         hideSetupScreen();
     } catch (err) {
-        errorEl.textContent = err.toString();
+        console.error("Connection setup failed:", err);
+        errorEl.textContent = err instanceof Error && [t("error_server_url"), t("error_token")].includes(err.message)
+            ? err.message : t(phase === "save" ? "settings_save_failed"
+                : phase === "dashboard" ? "dashboard_load_failed" : "error_connection");
         errorEl.classList.remove("hidden");
     } finally {
         setupBusy = false;

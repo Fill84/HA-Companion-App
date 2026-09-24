@@ -103,6 +103,7 @@ async function saveSettings() {
     const language = document.getElementById("settings-language").value;
     const autostart = document.getElementById("settings-autostart").checked;
 
+    let phase = "save";
     try {
         if (!Number.isInteger(interval) || interval < 5 || interval > 3600) {
             throw new Error(t("error_update_interval"));
@@ -117,6 +118,7 @@ async function saveSettings() {
         });
 
         if (serverUrl !== currentSettings.server_url || token) {
+            phase = "register";
             await window.__TAURI__.core.invoke("register_device");
         }
 
@@ -124,10 +126,13 @@ async function saveSettings() {
         setLanguage(language);
 
         // Close settings modal (this also re-opens the HA dashboard view)
+        phase = "dashboard";
         await closeSettings();
     } catch (err) {
         console.error("Failed to save settings:", err);
-        alert(t("settings_save_failed") + ": " + err);
+        alert(err instanceof Error && err.message === t("error_update_interval")
+            ? err.message : t(phase === "register" ? "error_connection"
+                : phase === "dashboard" ? "dashboard_load_failed" : "settings_save_failed"));
     }
 }
 
@@ -213,8 +218,9 @@ async function reconnectNow() {
         statusEl.classList.add("status-ok");
         statusEl.textContent = t("reconnect_success");
     } catch (err) {
+        console.error("Failed to reconnect:", err);
         statusEl.classList.add("status-error");
-        statusEl.textContent = t("reconnect_failed") + (err.toString());
+        statusEl.textContent = t("reconnect_failed");
     } finally {
         btn.disabled = false;
     }
