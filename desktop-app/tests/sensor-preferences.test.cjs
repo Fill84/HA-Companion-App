@@ -4,9 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function screen() {
+function screen({ syncPending = false } = {}) {
     const elements = new Map();
     const calls = [];
+    const alerts = [];
     function element() {
         const classes = new Set();
         return {
@@ -35,15 +36,16 @@ function screen() {
     const settings = { server_url: 'http://localhost:8123', access_token: 'token',
         update_interval: 60, enabled_sensors: { gpu: true }, is_registered: true };
     const context = vm.createContext({ document, console, t: key => key, setLanguage() {},
-        alert: message => { throw new Error(message); },
+        alert: message => { alerts.push(message); },
         window: { __TAURI__: { core: { invoke: async (name, args) => {
             calls.push({ name, args });
             if (name === 'get_settings') return settings;
             if (name === 'get_sensor_list') return [{ id: 'gpu', name: 'GPU', enabled: true, updates_at_interval: true }];
+            if (name === 'save_settings') return { sensor_sync_pending: syncPending };
         } } } },
     });
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/settings.js'), 'utf8'), context);
-    return { context, document, calls };
+    return { context, document, calls, alerts };
 }
 
 test('sensor choice is staged until Save and discarded by Cancel', async () => {
@@ -63,4 +65,12 @@ test('sensor choice is staged until Save and discarded by Cancel', async () => {
     await ui.context.saveSettings();
     const saved = ui.calls.find(call => call.name === 'save_settings');
     assert.equal(saved.args.enabledSensors.gpu, false);
+});
+
+test('saved preferences with pending HA sync report saved state accurately', async () => {
+    const ui = screen({ syncPending: true });
+    await ui.context.openSettings();
+    await ui.context.saveSettings();
+    assert.deepEqual(ui.alerts, ['settings_saved_sync_pending']);
+    assert.equal(ui.calls.filter(call => call.name === 'save_settings').length, 1);
 });

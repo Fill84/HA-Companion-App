@@ -123,7 +123,7 @@ async function saveSettings() {
         if (!Number.isInteger(interval) || interval < 5 || interval > 3600) {
             throw new Error(t("error_update_interval"));
         }
-        await window.__TAURI__.core.invoke("save_settings", {
+        const saved = await window.__TAURI__.core.invoke("save_settings", {
             serverUrl: serverUrl,
             accessToken: token,
             updateInterval: interval,
@@ -143,6 +143,9 @@ async function saveSettings() {
         // Close settings modal (this also re-opens the HA dashboard view)
         phase = "dashboard";
         await closeSettings();
+        if (saved?.sensor_sync_pending) {
+            alert(t("settings_saved_sync_pending"));
+        }
     } catch (err) {
         console.error("Failed to save settings:", err);
         alert(err instanceof Error && err.message === t("error_update_interval")

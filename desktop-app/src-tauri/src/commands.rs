@@ -24,6 +24,11 @@ pub struct SettingsResponse {
     pub is_registered: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SaveSettingsResult {
+    pub sensor_sync_pending: bool,
+}
+
 /// Get current settings
 #[tauri::command]
 pub async fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsResponse, String> {
@@ -120,7 +125,7 @@ pub async fn save_settings(
     language: String,
     autostart: bool,
     enabled_sensors: Option<HashMap<String, bool>>,
-) -> Result<(), String> {
+) -> Result<SaveSettingsResult, String> {
     ensure_settings_loaded(&state)?;
     let server_url = normalize_server_url(&server_url);
     let submitted_token = access_token.trim();
@@ -196,11 +201,20 @@ pub async fn save_settings(
     }
 
     drop(settings);
-    if preferences_changed && !url_changed && !token_changed {
-        sync_all_sensors(state.inner().clone(), &app).await?;
-    }
+    let sensor_sync_pending = if preferences_changed && !url_changed && !token_changed {
+        if let Err(error) = sync_all_sensors(state.inner().clone(), &app).await {
+            log::warn!("[HA] Settings saved, but sensor sync remains pending: {error}");
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
 
-    Ok(())
+    Ok(SaveSettingsResult {
+        sensor_sync_pending,
+    })
 }
 
 async fn sync_all_sensors(state: Arc<AppState>, app: &tauri::AppHandle) -> Result<(), String> {
