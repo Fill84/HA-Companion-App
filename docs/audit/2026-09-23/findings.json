@@ -1,0 +1,390 @@
+{
+  "date": "2026-09-23",
+  "status": "audit-only",
+  "counts": {
+    "P0": 1,
+    "P1": 24,
+    "P2": 27,
+    "P3": 2
+  },
+  "findings": [
+    {
+      "id": "SEC-01",
+      "priority": "P0",
+      "title": "Dashboardscript injecteert het HA-token ook op vreemde origins",
+      "evidence": "R/C",
+      "line": 144
+    },
+    {
+      "id": "SEC-02",
+      "priority": "P1",
+      "title": "TLS-certificaten worden onvoorwaardelijk vertrouwd",
+      "evidence": "C",
+      "line": 154
+    },
+    {
+      "id": "SEC-03",
+      "priority": "P1",
+      "title": "Een bekende kwetsbare kernel-driver wordt meegeleverd en gestart",
+      "evidence": "C",
+      "line": 164
+    },
+    {
+      "id": "SEC-04",
+      "priority": "P1",
+      "title": "De uninstaller verwijdert mogelijk een driver van andere software",
+      "evidence": "C",
+      "line": 174
+    },
+    {
+      "id": "SEC-05",
+      "priority": "P1",
+      "title": "Runtime-driverinstallatie vertrouwt een gebruikersschrijfbaar bestand op grootte",
+      "evidence": "C",
+      "line": 184
+    },
+    {
+      "id": "SEC-06",
+      "priority": "P1",
+      "title": "Webhookgeheimen komen in normale logs terecht",
+      "evidence": "C",
+      "line": 192
+    },
+    {
+      "id": "SEC-07",
+      "priority": "P2",
+      "title": "Langdurig token staat in platte configuratie en brede settings-responses",
+      "evidence": "C",
+      "line": 202
+    },
+    {
+      "id": "SEC-08",
+      "priority": "P2",
+      "title": "Lokale webview heeft geen CSP",
+      "evidence": "C/O",
+      "line": 212
+    },
+    {
+      "id": "SEC-09",
+      "priority": "P2",
+      "title": "Ontwikkelserver serveert de hele desktopmap op alle interfaces",
+      "evidence": "C",
+      "line": 220
+    },
+    {
+      "id": "SEC-10",
+      "priority": "P2",
+      "title": "Registratie controleert authenticatie, maar geen apparaateigenaarschap",
+      "evidence": "C/O",
+      "line": 228
+    },
+    {
+      "id": "REL-01",
+      "priority": "P1",
+      "title": "HTTP 200 wordt ten onrechte als webhookbevestiging gezien",
+      "evidence": "C",
+      "line": 238
+    },
+    {
+      "id": "REL-02",
+      "priority": "P1",
+      "title": "Tijdelijke webhookfout wist een mogelijk geldige registratie",
+      "evidence": "C",
+      "line": 248
+    },
+    {
+      "id": "REL-03",
+      "priority": "P1",
+      "title": "URL/token wijzigen stopt sensorupdates zonder automatisch herstel",
+      "evidence": "C",
+      "line": 256
+    },
+    {
+      "id": "REL-04",
+      "priority": "P1",
+      "title": "Registratiestatus kan gedeeltelijk opgeslagen en intern inconsistent zijn",
+      "evidence": "C",
+      "line": 264
+    },
+    {
+      "id": "REL-05",
+      "priority": "P1",
+      "title": "Afsluittimeout begrenst niet het wachten op de HTTP-lock",
+      "evidence": "C",
+      "line": 274
+    },
+    {
+      "id": "REL-06",
+      "priority": "P1",
+      "title": "Windows-hook kiest geen eigen HWND en verwerkt annulering niet",
+      "evidence": "C",
+      "line": 284
+    },
+    {
+      "id": "REL-07",
+      "priority": "P1",
+      "title": "Autostartschakelaar heeft geen effect op OS-autostart",
+      "evidence": "C",
+      "line": 292
+    },
+    {
+      "id": "REL-08",
+      "priority": "P2",
+      "title": "Opslaan meldt succes vóór duurzame opslag en zonder schrijffout",
+      "evidence": "C",
+      "line": 300
+    },
+    {
+      "id": "HA-01",
+      "priority": "P1",
+      "title": "Beschikbaarheid heeft uiteenlopende toestanden en kan fout blijven staan",
+      "evidence": "R",
+      "line": 310
+    },
+    {
+      "id": "HA-02",
+      "priority": "P1",
+      "title": "Instelbaar update-interval wordt niet naar HA gestuurd; heartbeat hangt van sensoren af",
+      "evidence": "C/R",
+      "line": 321
+    },
+    {
+      "id": "HA-03",
+      "priority": "P1",
+      "title": "Webhookpayloads worden onvoldoende gevalideerd en fouten tellen als activiteit",
+      "evidence": "R/C",
+      "line": 329
+    },
+    {
+      "id": "HA-04",
+      "priority": "P1",
+      "title": "Gewone sensorwaarden blijven beschikbaar terwijl het apparaat offline is",
+      "evidence": "C",
+      "line": 337
+    },
+    {
+      "id": "HA-05",
+      "priority": "P2",
+      "title": "Verwijdering/unload ruimt eigen stores en timer niet consequent op",
+      "evidence": "C",
+      "line": 347
+    },
+    {
+      "id": "HA-06",
+      "priority": "P2",
+      "title": "Reparatie van een webhook controleert niet of het apparaat geladen/actief is",
+      "evidence": "C",
+      "line": 355
+    },
+    {
+      "id": "HA-07",
+      "priority": "P2",
+      "title": "Bestaande apparaatmetadata veroudert na een app-/OS-update",
+      "evidence": "C",
+      "line": 363
+    },
+    {
+      "id": "SEN-01",
+      "priority": "P1",
+      "title": "'CPU Temperature' heeft geen betrouwbaar vastgelegde meetbetekenis",
+      "evidence": "C",
+      "line": 373
+    },
+    {
+      "id": "SEN-02",
+      "priority": "P2",
+      "title": "Geheugen- en VRAM-eenheden zijn verkeerd benoemd",
+      "evidence": "C",
+      "line": 383
+    },
+    {
+      "id": "SEN-03",
+      "priority": "P2",
+      "title": "Sensor-ID's veranderen bij andere hardwareaantallen of naamvolgorde",
+      "evidence": "C",
+      "line": 391
+    },
+    {
+      "id": "SEN-04",
+      "priority": "P2",
+      "title": "In-/uitschakelen en verdwijnen van sensoren heeft geen volledig lifecyclecontract",
+      "evidence": "C",
+      "line": 399
+    },
+    {
+      "id": "SEN-05",
+      "priority": "P2",
+      "title": "Ondersteunde metingen verschillen sterk per platform en vendor",
+      "evidence": "C",
+      "line": 407
+    },
+    {
+      "id": "SEN-06",
+      "priority": "P2",
+      "title": "Uptime en Last Boot verliezen HA-typefunctionaliteit door presentatie in de meetwaarde",
+      "evidence": "C/O",
+      "line": 415
+    },
+    {
+      "id": "PERF-01",
+      "priority": "P2",
+      "title": "Iedere tien cycli worden alle sensoren opnieuw geregistreerd en stores herschreven",
+      "evidence": "C/O",
+      "line": 427
+    },
+    {
+      "id": "PERF-02",
+      "priority": "P2",
+      "title": "Collectie doet onnodig werk en blokkerende OS-calls op async workers",
+      "evidence": "C/O",
+      "line": 437
+    },
+    {
+      "id": "OBS-01",
+      "priority": "P2",
+      "title": "Logs groeien onbeperkt en release-diagnostiek is niet platformgelijk",
+      "evidence": "C",
+      "line": 445
+    },
+    {
+      "id": "ARCH-01",
+      "priority": "P2",
+      "title": "Protocol, sensordefinities en toestand zijn op meerdere plaatsen handmatig gekoppeld",
+      "evidence": "C/O",
+      "line": 453
+    },
+    {
+      "id": "UI-01",
+      "priority": "P2",
+      "title": "Escape/annuleren kan buiten de modal een dashboard openen of opnieuw laden",
+      "evidence": "R/C",
+      "line": 465
+    },
+    {
+      "id": "UI-02",
+      "priority": "P2",
+      "title": "Registratie kan eindigen met een verborgen fout; dubbele submits zijn mogelijk",
+      "evidence": "R/C",
+      "line": 473
+    },
+    {
+      "id": "UI-03",
+      "priority": "P2",
+      "title": "Instellingen missen afdwingbare invoervalidatie",
+      "evidence": "R/C",
+      "line": 481
+    },
+    {
+      "id": "UI-04",
+      "priority": "P2",
+      "title": "Annuleren draait sensorwijzigingen niet terug; herstelsetup reset voorkeuren",
+      "evidence": "C",
+      "line": 489
+    },
+    {
+      "id": "UI-05",
+      "priority": "P3",
+      "title": "Vertaling en taalwissel zijn onvolledig",
+      "evidence": "R/C",
+      "line": 497
+    },
+    {
+      "id": "UI-06",
+      "priority": "P2",
+      "title": "Modaltoegankelijkheid en kleine schermhoogte zijn onvoldoende afgedekt",
+      "evidence": "C/O",
+      "line": 505
+    },
+    {
+      "id": "UI-07",
+      "priority": "P3",
+      "title": "Achtergrondanimatie heeft geen koppeling aan de zichtbare appmodus",
+      "evidence": "C/O",
+      "line": 513
+    },
+    {
+      "id": "DEP-01",
+      "priority": "P1",
+      "title": "Cargo.lock bevat bekende kwetsbaarheidsmatches en onderhoudsschuld",
+      "evidence": "R",
+      "line": 523
+    },
+    {
+      "id": "DEP-02",
+      "priority": "P2",
+      "title": "Yarn-tree bevat acht advisories; npm-scan geeft een onvolledig geruststellend beeld",
+      "evidence": "R",
+      "line": 540
+    },
+    {
+      "id": "BUILD-01",
+      "priority": "P1",
+      "title": "Clean npm-installatie faalt; dependency-resolutie is niet eenduidig",
+      "evidence": "R/C",
+      "line": 548
+    },
+    {
+      "id": "BUILD-02",
+      "priority": "P1",
+      "title": "Windows-signingconfiguratie faalt zodra een certificaat wordt gebruikt",
+      "evidence": "R",
+      "line": 556
+    },
+    {
+      "id": "BUILD-03",
+      "priority": "P1",
+      "title": "Driverinstallatie gebruikt onjuist resourcepad en heeft geen gelijkwaardige MSI-route",
+      "evidence": "C",
+      "line": 564
+    },
+    {
+      "id": "BUILD-04",
+      "priority": "P1",
+      "title": "Releases hebben geen tests, lint, security- of contractgates",
+      "evidence": "C/R",
+      "line": 574
+    },
+    {
+      "id": "BUILD-05",
+      "priority": "P2",
+      "title": "Een release bindt desktop, native versie en integratiecommit niet vast samen",
+      "evidence": "C",
+      "line": 582
+    },
+    {
+      "id": "BUILD-06",
+      "priority": "P2",
+      "title": "Geclaimde cross-platform ondersteuning heeft geen bewezen testmatrix",
+      "evidence": "C/O",
+      "line": 590
+    },
+    {
+      "id": "BUILD-07",
+      "priority": "P1",
+      "title": "De opgegeven minimale HA-versie past niet bij de geïmporteerde API",
+      "evidence": "C",
+      "line": 598
+    },
+    {
+      "id": "TEST-01",
+      "priority": "P1",
+      "title": "De bestaande suite test de kritieke integratiepaden niet",
+      "evidence": "C/R",
+      "line": 606
+    },
+    {
+      "id": "DOC-01",
+      "priority": "P2",
+      "title": "README's en eerdere plannen beschrijven onderling verschillende producten",
+      "evidence": "C",
+      "line": 616
+    },
+    {
+      "id": "DOC-02",
+      "priority": "P2",
+      "title": "Vendorcomponenten missen volledige distributie-/herkomstregistratie",
+      "evidence": "C/O",
+      "line": 626
+    }
+  ]
+}

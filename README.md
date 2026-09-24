@@ -9,11 +9,11 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
   - Native system tray met context menu (Tonen/Verbergen, Instellingen, Afsluiten)
   - Auto-login in HA dashboard via access token injectie
   - Instelbare taal (EN/NL), settings modal, sensor enable/disable
-  - Cross-platform builds: Windows (.exe/.msi), macOS (.dmg), Linux (.deb/.rpm/.AppImage)
+  - Beoogde release-artifacts: Windows (.exe/.msi), macOS (.dmg), Linux (.deb/.rpm/.AppImage); de platformmatrix is nog niet volledig gevalideerd
 
 - **Home Assistant Integratie:**
   - Custom component voor device registry, dynamische sensors, webhook-based updates
-  - HACS support via integratie branch (custom repo)
+  - HACS support via de afzonderlijke `ha-integration`-repository
   - Volledige device info, sensor entities, binary sensors
   - UI strings en vertalingen (EN/NL)
 
@@ -36,9 +36,8 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
 
 - voor meer informatie over de integratie bezoek: https://github.com/Fill84/ha-integration
 
-## Automatische Releases
-- GitHub Actions workflow bouwt en released installers voor alle platforms bij elke push naar main/integratie
-- Versiebeheer en artifacts zijn volledig geautomatiseerd
+## Bouw en releasecontrole
+De desktop gebruikt Yarn 1.22.22 met één `yarn.lock`; een schone installatie is `cd desktop-app && corepack yarn install --frozen-lockfile`. Pull requests en pushes naar `main` draaien de desktopverificatie. Een release start uitsluitend via `workflow_dispatch` op `main` met de volledige, gepushte 40-tekens commit-SHA uit de afzonderlijke `Fill84/ha-integration`-repository. `package.json`, `Cargo.toml` en `tauri.conf.json` moeten dezelfde desktopversie bevatten; de release bevat een manifest met beide broncommits en SHA-256-hashes van alle artifacts. De daadwerkelijke platform-, installer- en HA-compatibiliteitsproeven zijn nog releasevoorwaarden. Zie de [uitvoeringsstatus](docs/plans/2026-09-24-verificatiestatus.md).
 
 ## Projectstructuur
 ```
@@ -47,7 +46,7 @@ HA-Companion-App/
 │   ├── src/
 │   ├── src-tauri/
 │   └── ...
-├── ha-integration/     # Home Assistant custom integratie
+├── ha-integration/     # Lokale aparte Git-repo (genegeerd door hoofdrepo)
 │   ├── custom_components/
 │   └── ...
 ├── .github/workflows/  # Release workflow
@@ -60,6 +59,12 @@ HA-Companion-App/
 - Windows: NSIS installer (.exe), MSI
 - macOS: DMG (.dmg)
 - Linux: DEB (.deb), RPM (.rpm), AppImage
+
+## CPU-temperatuur en hostbelasting
+
+De basisapp bevat geen WinRing0-driver meer. CPU-gebruik, frequentie en model werken zonder een extra temperatuurdriver. Voor Windows-CPU-temperatuur is een expliciet inschakelbare provider beschikbaar; deze vereist apart .NET 10 en de officiële PawnIO-driver. Zonder die provider is de temperatuur `unknown`. De app installeert of beheert geen kernel-driver.
+
+De collector levert één snapshot per meetronde en hergebruikt de basis-systeemmetingen. De optionele helper blijft actief tijdens gebruik en leest op verzoek. Zie [providerdocumentatie, bouwinstructies en migratiegrenzen](hwmon-helper/README.md) en de [sensor-supportmatrix](docs/specs/2026-09-24-sensor-support.md). Bestaande WinRing0-services worden niet automatisch verwijderd; een upgrade van een oude installatie vraagt nog migratievalidatie.
 
 ## License
 Zie LICENSE.md voor licentievoorwaarden.

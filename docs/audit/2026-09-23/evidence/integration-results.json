@@ -1,0 +1,36 @@
+{
+  "offline_undone_by_first_tick": {
+    "after_offline": false,
+    "after_tick": true,
+    "reproduced": true
+  },
+  "brief_reconnect_stays_online_after_timeout": {
+    "new_signals": 0,
+    "last_entity_signal": true,
+    "reproduced": true
+  },
+  "invalid_command_counts_as_heartbeat": {
+    "http_status": 400,
+    "last_entity_signal": true,
+    "reproduced": true
+  },
+  "null_envelope": {
+    "exception": "AttributeError"
+  },
+  "list_command_type": {
+    "http_status": 400
+  },
+  "nonempty_list_command_type": {
+    "exception": "TypeError"
+  },
+  "null_command_data": {
+    "exception": "AttributeError"
+  },
+  "null_sensor_item": {
+    "exception": "AttributeError"
+  },
+  "configured_interval_600_but_server_default_60": {
+    "at_180_seconds": false,
+    "required_with_interval_600": true
+  }
+}

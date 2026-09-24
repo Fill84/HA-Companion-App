@@ -1,0 +1,26 @@
+{
+  "escape_without_open_modal": [
+    "load_dashboard"
+  ],
+  "interval_below_html_minimum": 1,
+  "missing_translations": [
+    "swap_usage",
+    "bios_vendor",
+    "bios_date",
+    "system_uptime",
+    "process_count",
+    "last_boot",
+    "logged_in_user",
+    "display"
+  ],
+  "dashboard_failure_after_registration": {
+    "setup_hidden": true,
+    "error_hidden": false,
+    "calls": [
+      "save_settings",
+      "register_device",
+      "load_dashboard"
+    ]
+  },
+  "token_injected_on_untrusted_origin": true
+}
