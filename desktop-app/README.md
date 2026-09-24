@@ -4,4 +4,4 @@ This directory contains the Tauri desktop application. User installation and upg
 
 To build locally, install the locked Yarn dependencies with `corepack yarn install --frozen-lockfile`, then run `corepack yarn tauri:build`. On Windows this builds an NSIS installer under `src-tauri/target/release/bundle/nsis/`. A local build is a test artifact until its installer, signing policy, and release checks have been completed.
 
-Windows CPU temperature uses the optional, bundled PawnIO driver with the app's own Rust sensor service. No separate PawnIO application is needed. Without this optional provider, unsupported measurements remain unavailable. See the [provider manifest](src-tauri/resources/pawnio/MANIFEST.md) for pinned driver provenance.
+Windows CPU temperature uses the bundled PawnIO driver through the app's own Rust sensor service. The Windows installer installs both components as part of the app; no separate PawnIO application, helper, or settings switch is needed. On unsupported hardware the measurement remains unavailable. See the [provider manifest](src-tauri/resources/pawnio/MANIFEST.md) for the pinned driver's provenance and license.

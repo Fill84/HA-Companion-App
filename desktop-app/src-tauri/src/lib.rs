@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tauri::{
     image::Image,
-    menu::{MenuBuilder, MenuItemBuilder},
+    menu::{MenuBuilder, MenuItem, MenuItemBuilder},
     tray::TrayIconBuilder,
     Emitter, Manager, RunEvent, WindowEvent,
 };
@@ -29,6 +29,35 @@ pub struct AppState {
     pub collector: Mutex<SensorCollector>,
     pub is_registered: Mutex<bool>,
     pub registration_lock: Mutex<()>,
+}
+
+struct TrayItems {
+    show_hide: MenuItem<tauri::Wry>,
+    settings: MenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
+}
+
+fn tray_labels(language: &str) -> (&'static str, &'static str, &'static str) {
+    if language == "nl" {
+        ("Tonen / Verbergen", "Instellingen", "Afsluiten")
+    } else {
+        ("Show / Hide", "Settings", "Quit")
+    }
+}
+
+fn update_tray_labels(app: &tauri::AppHandle, language: &str) {
+    if let Some(items) = app.try_state::<TrayItems>() {
+        let (show_hide, settings, quit) = tray_labels(language);
+        for result in [
+            items.show_hide.set_text(show_hide),
+            items.settings.set_text(settings),
+            items.quit.set_text(quit),
+        ] {
+            if let Err(error) = result {
+                log::warn!("Could not update tray label: {error}");
+            }
+        }
+    }
 }
 
 /// Run potentially slow hardware reads on Tokio's blocking pool.
@@ -120,11 +149,11 @@ pub fn run(dev_mode: bool) {
                 app_settings.webhook_id.clone(),
             );
             ha_client.set_update_interval(app_settings.update_interval);
-            let mut collector = SensorCollector::new(
+            let collector = SensorCollector::new(
                 &app_settings.enabled_sensors,
                 &app_settings.sensor_identity_map,
+                &app_settings.legacy_gpu_aliases,
             );
-            collector.configure_temperature_provider(app_settings.cpu_temperature_provider);
 
             // Create shared state
             let state = Arc::new(AppState {
@@ -169,9 +198,10 @@ pub fn run(dev_mode: bool) {
             }
 
             // Build tray menu
-            let show_hide = MenuItemBuilder::with_id("show_hide", "Show / Hide").build(app)?;
-            let settings_item = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
-            let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+            let (show_label, settings_label, quit_label) = tray_labels(&app_settings.language);
+            let show_hide = MenuItemBuilder::with_id("show_hide", show_label).build(app)?;
+            let settings_item = MenuItemBuilder::with_id("settings", settings_label).build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", quit_label).build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&show_hide)
@@ -179,6 +209,11 @@ pub fn run(dev_mode: bool) {
                 .separator()
                 .item(&quit)
                 .build()?;
+            app.manage(TrayItems {
+                show_hide: show_hide.clone(),
+                settings: settings_item.clone(),
+                quit: quit.clone(),
+            });
 
             // Build tray icon (from_bytes decodes .ico; path is relative to this source file)
             let icon_bytes = include_bytes!("../icons/icon.ico");
@@ -247,6 +282,7 @@ pub fn run(dev_mode: bool) {
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
+            get_integration_version,
             save_settings,
             register_device,
             reregister_device,
@@ -404,6 +440,9 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                         match crate::commands::register_device_inner(&state, &handle).await {
                             Ok(()) => {
                                 log::info!("Background registration recovered");
+                                if let Err(error) = handle.emit("registration-restored", ()) {
+                                    log::warn!("Could not announce restored registration: {error}");
+                                }
                                 cycle_count = 0;
                             }
                             Err(error) => log::warn!("Background registration failed: {error}"),

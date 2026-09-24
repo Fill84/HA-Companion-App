@@ -32,7 +32,6 @@ impl Temperature {
 }
 
 pub struct TemperatureReader {
-    enabled: bool,
     #[cfg(not(windows))]
     components: sysinfo::Components,
     #[cfg(not(windows))]
@@ -40,9 +39,8 @@ pub struct TemperatureReader {
 }
 
 impl TemperatureReader {
-    pub fn new(enabled: bool) -> Self {
+    pub fn new() -> Self {
         Self {
-            enabled,
             #[cfg(not(windows))]
             components: sysinfo::Components::new(),
             #[cfg(not(windows))]
@@ -50,16 +48,10 @@ impl TemperatureReader {
         }
     }
 
-    pub fn set_enabled(&mut self, enabled: bool) {
-        self.enabled = enabled;
-    }
     pub fn suspend(&mut self) {}
 
     #[cfg(windows)]
     pub fn read(&mut self) -> Temperature {
-        if !self.enabled {
-            return Temperature::unavailable("disabled");
-        }
         windows_service::read()
     }
 

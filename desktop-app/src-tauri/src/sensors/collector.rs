@@ -61,6 +61,60 @@ fn assign_sensor_suffixes(
         .collect()
 }
 
+fn valid_legacy_gpu_suffix(suffix: &str) -> bool {
+    suffix.is_empty()
+        || (suffix.len() <= 32
+            && suffix.starts_with('_')
+            && suffix[1..]
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '_'))
+}
+
+fn add_legacy_gpu_aliases(
+    sensors: &mut Vec<SensorValue>,
+    first: usize,
+    canonical_suffix: &str,
+    physical_id: Option<&str>,
+    aliases: &HashMap<String, Vec<String>>,
+    reserved_suffixes: &HashSet<String>,
+) {
+    let Some(physical_id) = physical_id else {
+        return;
+    };
+    let key = format!("gpu:{physical_id}");
+    let Some(requested) = aliases.get(&key) else {
+        return;
+    };
+    let originals: Vec<_> = sensors[first..].to_vec();
+    for alias in requested {
+        if alias == canonical_suffix
+            || !valid_legacy_gpu_suffix(alias)
+            || reserved_suffixes.contains(alias)
+            || aliases
+                .iter()
+                .filter(|(candidate, suffixes)| {
+                    candidate.starts_with("gpu:") && suffixes.contains(alias)
+                })
+                .count()
+                != 1
+        {
+            continue;
+        }
+        for original in &originals {
+            let Some(base) = original.unique_id.strip_suffix(canonical_suffix) else {
+                continue;
+            };
+            let unique_id = format!("{base}{alias}");
+            if sensors.iter().any(|sensor| sensor.unique_id == unique_id) {
+                continue;
+            }
+            let mut copy = original.clone();
+            copy.unique_id = unique_id;
+            sensors.push(copy);
+        }
+    }
+}
+
 fn rounded(value: f64, decimal_places: i32) -> f64 {
     let factor = 10_f64.powi(decimal_places);
     (value * factor).round() / factor
@@ -168,6 +222,7 @@ pub struct SensorCollector {
     sys: System,
     enabled_sensors: HashMap<String, bool>,
     identity_map: HashMap<String, String>,
+    legacy_gpu_aliases: HashMap<String, Vec<String>>,
     temperature: TemperatureReader,
 }
 
@@ -175,6 +230,7 @@ impl SensorCollector {
     pub fn new(
         enabled_sensors: &HashMap<String, bool>,
         identity_map: &HashMap<String, String>,
+        legacy_gpu_aliases: &HashMap<String, Vec<String>>,
     ) -> Self {
         let sys = System::new_with_specifics(
             sysinfo::RefreshKind::new()
@@ -186,7 +242,8 @@ impl SensorCollector {
             sys,
             enabled_sensors: enabled_sensors.clone(),
             identity_map: identity_map.clone(),
-            temperature: TemperatureReader::new(false),
+            legacy_gpu_aliases: legacy_gpu_aliases.clone(),
+            temperature: TemperatureReader::new(),
         }
     }
 
@@ -196,14 +253,6 @@ impl SensorCollector {
 
     fn is_enabled(&self, sensor_id: &str) -> bool {
         *self.enabled_sensors.get(sensor_id).unwrap_or(&true)
-    }
-
-    pub fn configure_temperature_provider(&mut self, enabled: bool) {
-        self.temperature = TemperatureReader::new(enabled);
-    }
-
-    pub fn set_temperature_provider(&mut self, enabled: bool) {
-        self.temperature.set_enabled(enabled);
     }
 
     /// Collect all sensors (both static and dynamic) — used at startup
@@ -424,8 +473,10 @@ impl SensorCollector {
                 .map(|gpu| gpu.physical_id.clone())
                 .collect();
             let suffixes = assign_sensor_suffixes(&mut self.identity_map, "gpu", &identities);
+            let reserved_suffixes: HashSet<_> = suffixes.iter().flatten().cloned().collect();
             for (i, (gpu_info, suffix)) in gpu_data.gpus.iter().zip(suffixes).enumerate() {
                 let Some(suffix) = suffix else { continue };
+                let first = sensors.len();
 
                 if let Some(usage) = gpu_info.usage_percent {
                     sensors.push(SensorValue {
@@ -492,6 +543,14 @@ impl SensorCollector {
                         update_at_interval: true,
                     });
                 }
+                add_legacy_gpu_aliases(
+                    &mut sensors,
+                    first,
+                    &suffix,
+                    gpu_info.physical_id.as_deref(),
+                    &self.legacy_gpu_aliases,
+                    &reserved_suffixes,
+                );
             }
         }
 
@@ -855,8 +914,10 @@ impl SensorCollector {
                 .map(|gpu| gpu.physical_id.clone())
                 .collect();
             let suffixes = assign_sensor_suffixes(&mut self.identity_map, "gpu", &identities);
+            let reserved_suffixes: HashSet<_> = suffixes.iter().flatten().cloned().collect();
             for (i, (gpu_info, suffix)) in gpu_data.gpus.iter().zip(suffixes).enumerate() {
                 let Some(suffix) = suffix else { continue };
+                let first = sensors.len();
 
                 sensors.push(SensorValue {
                     unique_id: format!("gpu_model{}", suffix),
@@ -887,6 +948,14 @@ impl SensorCollector {
                     },
                     update_at_interval: false,
                 });
+                add_legacy_gpu_aliases(
+                    &mut sensors,
+                    first,
+                    &suffix,
+                    gpu_info.physical_id.as_deref(),
+                    &self.legacy_gpu_aliases,
+                    &reserved_suffixes,
+                );
             }
         }
 
@@ -971,6 +1040,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn verified_gpu_aliases_restore_legacy_ids_without_reassigning_another_gpu() {
+        let mut sensors = vec![SensorValue {
+            unique_id: "gpu_usage_stable_1".into(),
+            name: "GPU Usage 0".into(),
+            state: serde_json::json!(31.5),
+            sensor_type: "sensor".into(),
+            device_class: None,
+            unit_of_measurement: Some("%".into()),
+            state_class: Some("measurement".into()),
+            icon: None,
+            attributes: HashMap::new(),
+            update_at_interval: true,
+        }];
+        let aliases = HashMap::from([(
+            "gpu:nvml:verified-card".into(),
+            vec![String::new(), "_0".into(), "_stable_2".into()],
+        )]);
+        let reserved = HashSet::from(["_stable_1".into(), "_stable_2".into()]);
+        add_legacy_gpu_aliases(
+            &mut sensors,
+            0,
+            "_stable_1",
+            Some("nvml:verified-card"),
+            &aliases,
+            &reserved,
+        );
+        assert_eq!(
+            sensors
+                .iter()
+                .map(|sensor| sensor.unique_id.as_str())
+                .collect::<Vec<_>>(),
+            ["gpu_usage_stable_1", "gpu_usage", "gpu_usage_0"]
+        );
+        assert!(sensors.iter().all(|sensor| sensor.state == 31.5));
+    }
+
+    #[test]
     fn physical_sensor_ids_survive_hotplug_and_reordering() {
         let mut map = HashMap::new();
         let first = assign_sensor_suffixes(&mut map, "gpu", &[Some("pci:a".into())]);
@@ -1015,24 +1121,6 @@ mod tests {
             vec![None, None]
         );
         assert_eq!(assign_sensor_suffixes(&mut map, "gpu", &[None]), vec![None]);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn disabled_temperature_provider_clears_the_existing_entity_value() {
-        let mut collector = SensorCollector::new(&HashMap::new(), &HashMap::new());
-        let mut enabled: HashMap<String, bool> = collector
-            .get_sensor_list()
-            .into_iter()
-            .map(|sensor| (sensor.id, false))
-            .collect();
-        enabled.insert("cpu_temperature".into(), true);
-        collector.set_enabled_sensors(enabled);
-        let snapshot = collector.collect_dynamic();
-        assert_eq!(snapshot.len(), 1);
-        assert_eq!(snapshot[0].unique_id, "cpu_temperature");
-        assert!(snapshot[0].state.is_null());
-        assert_eq!(snapshot[0].attributes["provider_status"], "disabled");
     }
 
     #[test]

@@ -12,6 +12,7 @@ use reqwest::Client;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsResponse {
+    pub app_version: String,
     pub server_url: String,
     pub has_access_token: bool,
     pub webhook_id_preview: Option<String>,
@@ -20,8 +21,6 @@ pub struct SettingsResponse {
     pub language: String,
     pub enabled_sensors: HashMap<String, bool>,
     pub autostart: bool,
-    pub cpu_temperature_provider: bool,
-    pub cpu_temperature_provider_supported: bool,
     pub is_registered: bool,
 }
 
@@ -32,6 +31,7 @@ pub async fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsRes
     let is_registered = *state.is_registered.lock().await;
 
     Ok(SettingsResponse {
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
         server_url: settings.server_url.clone(),
         has_access_token: !settings.access_token.is_empty(),
         webhook_id_preview: settings.webhook_id.as_ref().map(|id| {
@@ -43,10 +43,57 @@ pub async fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsRes
         language: settings.language.clone(),
         enabled_sensors: settings.enabled_sensors.clone(),
         autostart: settings.autostart,
-        cpu_temperature_provider: settings.cpu_temperature_provider,
-        cpu_temperature_provider_supported: cfg!(windows),
         is_registered,
     })
+}
+
+/// Read the version reported by the configured Home Assistant integration.
+#[tauri::command]
+pub async fn get_integration_version(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<String>, String> {
+    let settings = state.settings.lock().await;
+    let server_url = settings.server_url.clone();
+    let token = settings.access_token.clone();
+    drop(settings);
+    if server_url.is_empty() || token.is_empty() {
+        return Ok(None);
+    }
+
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|_| "Could not check integration version".to_string())?;
+    let response = client
+        .get(format!(
+            "{}/api/desktop_app/registrations",
+            server_url.trim_end_matches('/')
+        ))
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|_| "Could not reach Home Assistant".to_string())?;
+    if !response.status().is_success() {
+        return Err("Home Assistant integration is unavailable".into());
+    }
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|_| "Home Assistant returned an invalid ping response".to_string())?;
+    Ok(integration_version_from_response(&body))
+}
+
+fn integration_version_from_response(body: &serde_json::Value) -> Option<String> {
+    body.get("integration_version")
+        .and_then(serde_json::Value::as_str)
+        .filter(|version| {
+            !version.is_empty()
+                && version.len() <= 64
+                && version
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
+        })
+        .map(str::to_owned)
 }
 
 /// Save settings and reinitialize connection
@@ -63,7 +110,6 @@ pub async fn save_settings(
     update_interval: u64,
     language: String,
     autostart: bool,
-    cpu_temperature_provider: Option<bool>,
     enabled_sensors: Option<HashMap<String, bool>>,
 ) -> Result<(), String> {
     let server_url = normalize_server_url(&server_url);
@@ -96,13 +142,9 @@ pub async fn save_settings(
     next.update_interval = update_interval;
     next.language = language;
     next.autostart = autostart;
-    if let Some(enabled) = cpu_temperature_provider {
-        next.cpu_temperature_provider = enabled && cfg!(windows);
-    }
     if let Some(preferences) = enabled_sensors {
         next.enabled_sensors = preferences;
     }
-    let provider_changed = next.cpu_temperature_provider != settings.cpu_temperature_provider;
     if url_changed || token_changed {
         next.webhook_id = None;
     }
@@ -127,9 +169,9 @@ pub async fn save_settings(
         return Err(e);
     }
     *settings = next;
+    crate::update_tray_labels(&app, &settings.language);
     {
         let mut collector = state.collector.lock().await;
-        collector.set_temperature_provider(settings.cpu_temperature_provider);
         collector.set_enabled_sensors(settings.enabled_sensors.clone());
     }
 
@@ -145,7 +187,7 @@ pub async fn save_settings(
     }
 
     drop(settings);
-    if (preferences_changed || provider_changed) && !url_changed && !token_changed {
+    if preferences_changed && !url_changed && !token_changed {
         sync_all_sensors(state.inner().clone(), &app).await?;
     }
 
@@ -193,8 +235,28 @@ fn resolve_access_token(
 
 #[cfg(test)]
 mod settings_contract_tests {
-    use super::resolve_access_token;
+    use super::{integration_version_from_response, resolve_access_token};
     use crate::settings::AppSettings;
+
+    #[test]
+    fn integration_version_requires_a_safe_version_string() {
+        assert_eq!(
+            integration_version_from_response(
+                &serde_json::json!({"integration_version": "1.0.11"})
+            ),
+            Some("1.0.11".into())
+        );
+        assert_eq!(
+            integration_version_from_response(&serde_json::json!({"message": "old response"})),
+            None
+        );
+        assert_eq!(
+            integration_version_from_response(
+                &serde_json::json!({"integration_version": "<script>"})
+            ),
+            None
+        );
+    }
 
     #[test]
     fn blank_token_reuses_only_for_same_server() {

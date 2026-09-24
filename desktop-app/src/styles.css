@@ -573,11 +573,27 @@ body {
 
 .settings-footer {
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
     gap: var(--ha-space-3);
     padding: var(--ha-space-4) var(--ha-space-5);
     border-top: 1px solid var(--ha-divider-soft);
     background: var(--ha-surface);
+}
+
+.settings-versions {
+    min-width: 0;
+    color: var(--ha-text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.settings-footer-actions {
+    display: flex;
+    gap: var(--ha-space-3);
+    margin-left: auto;
 }
 
 .settings-footer .btn {

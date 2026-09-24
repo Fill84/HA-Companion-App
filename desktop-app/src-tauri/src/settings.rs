@@ -42,9 +42,9 @@ pub struct AppSettings {
     pub enabled_sensors: HashMap<String, bool>,
     #[serde(default)]
     pub sensor_identity_map: HashMap<String, String>,
-    pub autostart: bool,
     #[serde(default)]
-    pub cpu_temperature_provider: bool,
+    pub legacy_gpu_aliases: HashMap<String, Vec<String>>,
+    pub autostart: bool,
 }
 
 impl Default for AppSettings {
@@ -58,8 +58,8 @@ impl Default for AppSettings {
             language: "en".to_string(),
             enabled_sensors: HashMap::new(),
             sensor_identity_map: HashMap::new(),
+            legacy_gpu_aliases: HashMap::new(),
             autostart: false,
-            cpu_temperature_provider: false,
         }
     }
 }
@@ -152,13 +152,13 @@ impl AppSettings {
             .get("sensor_identity_map")
             .and_then(|value| serde_json::from_value(value.clone()).ok())
             .unwrap_or_default();
+        let legacy_gpu_aliases: HashMap<String, Vec<String>> = store
+            .get("legacy_gpu_aliases")
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+            .unwrap_or_default();
 
         let autostart = store
             .get("autostart")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let cpu_temperature_provider = store
-            .get("cpu_temperature_provider")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
@@ -171,8 +171,8 @@ impl AppSettings {
             language,
             enabled_sensors,
             sensor_identity_map,
+            legacy_gpu_aliases,
             autostart,
-            cpu_temperature_provider,
         }
     }
 
@@ -207,11 +207,12 @@ impl AppSettings {
             "sensor_identity_map",
             serde_json::to_value(&self.sensor_identity_map).unwrap_or_default(),
         );
-        store.set("autostart", serde_json::json!(self.autostart));
         store.set(
-            "cpu_temperature_provider",
-            serde_json::json!(self.cpu_temperature_provider),
+            "legacy_gpu_aliases",
+            serde_json::to_value(&self.legacy_gpu_aliases).unwrap_or_default(),
         );
+        store.set("autostart", serde_json::json!(self.autostart));
+        store.delete("cpu_temperature_provider");
         if let Err(error) = store.save() {
             if credential_changed {
                 let rollback = match previous {
@@ -244,15 +245,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn legacy_settings_do_not_opt_in_to_a_new_provider() {
+    fn legacy_provider_choice_does_not_break_settings_load() {
         let mut value = serde_json::to_value(AppSettings::default()).unwrap();
-        value
-            .as_object_mut()
-            .unwrap()
-            .remove("cpu_temperature_provider");
+        value["cpu_temperature_provider"] = serde_json::json!(false);
         value["webhook_id"] = serde_json::json!("existing-webhook");
         let settings: AppSettings = serde_json::from_value(value).unwrap();
-        assert!(!settings.cpu_temperature_provider);
         assert_eq!(settings.webhook_id.as_deref(), Some("existing-webhook"));
     }
 

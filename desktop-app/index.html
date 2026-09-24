@@ -108,11 +108,6 @@
 
                 <div class="settings-section">
                     <h3 data-i18n="sensors">Sensors</h3>
-                    <div id="temperature-provider-group" class="form-group hidden">
-                        <label for="settings-temperature-provider" data-i18n="temperature_provider">Optional CPU temperature provider</label>
-                        <input type="checkbox" id="settings-temperature-provider" aria-describedby="temperature-provider-help">
-                        <p id="temperature-provider-help" data-i18n="temperature_provider_help">The app installer can add the bundled signed PawnIO driver for supported Intel CPUs. No separate sensor app or .NET runtime is needed. Without a supported reading, CPU temperature is unknown.</p>
-                    </div>
                     <div id="sensor-list" class="sensor-list">
                         <!-- Populated dynamically -->
                     </div>
@@ -145,8 +140,14 @@
                 </div>
             </div>
             <div class="settings-footer">
-                <button id="settings-cancel" class="btn btn-secondary" data-i18n="cancel">Cancel</button>
-                <button id="settings-save" class="btn btn-primary" data-i18n="save">Save</button>
+                <div class="settings-versions">
+                    <div><span data-i18n="app_version">App</span>: <span id="settings-app-version">–</span></div>
+                    <div><span data-i18n="integration_version">HA integration</span>: <span id="settings-integration-version">–</span></div>
+                </div>
+                <div class="settings-footer-actions">
+                    <button id="settings-cancel" class="btn btn-secondary" data-i18n="cancel">Cancel</button>
+                    <button id="settings-save" class="btn btn-primary" data-i18n="save">Save</button>
+                </div>
             </div>
         </div>
     </div>

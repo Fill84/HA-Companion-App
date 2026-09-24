@@ -222,6 +222,11 @@ document.addEventListener("DOMContentLoaded", () => {
             } catch (e) { /* best effort */ }
             showSetupScreen("webhook_dead");
         });
+        window.__TAURI__.event.listen("registration-restored", async () => {
+            if (!setupBusy && !document.getElementById("setup-screen").classList.contains("hidden")) {
+                await initApp();
+            }
+        });
     }
 
     // Initialize

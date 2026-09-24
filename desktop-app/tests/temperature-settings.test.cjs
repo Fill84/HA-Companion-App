@@ -30,36 +30,17 @@ function screen(settings) {
             calls.push({ name, args });
             if (name === 'get_settings') return settings;
             if (name === 'get_sensor_list') return [];
+            if (name === 'get_integration_version') return settings.integration_version ?? null;
         } } } },
     });
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/settings.js'), 'utf8'), context);
     return { context, document, calls };
 }
 
-test('old settings leave the provider off; Save explicitly submits opt-in', async () => {
-    const ui = screen({ cpu_temperature_provider_supported: true });
-    await ui.context.openSettings();
-    const input = ui.document.getElementById('settings-temperature-provider');
-    assert.equal(input.checked, false);
-    input.checked = true;
-    await ui.context.saveSettings();
-    assert.equal(ui.calls.find(call => call.name === 'save_settings').args.cpuTemperatureProvider, true);
-});
-
-test('Cancel does not save the provider choice; unsupported platforms hide it', async () => {
-    const ui = screen({ cpu_temperature_provider_supported: false });
-    await ui.context.openSettings();
-    assert.equal(ui.document.getElementById('temperature-provider-group').classList.contains('hidden'), true);
-    ui.document.getElementById('settings-temperature-provider').checked = true;
-    await ui.context.closeSettings();
-    assert.equal(ui.calls.some(call => call.name === 'save_settings'), false);
-});
-
 test('saved token stays outside the settings view and a blank field keeps it', async () => {
     const ui = screen({
         server_url: 'https://ha.example', has_access_token: true,
         update_interval: 60, language: 'en', enabled_sensors: {},
-        cpu_temperature_provider_supported: false,
     });
     await ui.context.openSettings();
     assert.equal(ui.document.getElementById('settings-token').value, '');
@@ -67,5 +48,23 @@ test('saved token stays outside the settings view and a blank field keeps it', a
     await ui.context.saveSettings();
     const save = ui.calls.find(call => call.name === 'save_settings');
     assert.equal(save.args.accessToken, '');
+    assert.equal(Object.hasOwn(save.args, 'cpuTemperatureProvider'), false);
     assert.equal(ui.calls.some(call => call.name === 'register_device'), false);
+});
+
+test('Settings shows the running app version and the connected integration version', async () => {
+    const ui = screen({
+        app_version: '1.0.6', integration_version: '1.0.11', is_registered: true,
+    });
+    await ui.context.openSettings();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(ui.document.getElementById('settings-app-version').textContent, 'v1.0.6');
+    assert.equal(ui.document.getElementById('settings-integration-version').textContent, 'v1.0.11');
+});
+
+test('Older integrations without version metadata show unknown', async () => {
+    const ui = screen({ app_version: '1.0.6', is_registered: true });
+    await ui.context.openSettings();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(ui.document.getElementById('settings-integration-version').textContent, 'version_unknown');
 });

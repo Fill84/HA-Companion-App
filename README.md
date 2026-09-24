@@ -20,10 +20,10 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
 ## Installatie
 
 ### Desktop App
-1. Download een **gepubliceerde en geteste** release voor jouw platform van [GitHub Releases](https://github.com/Fill84/HA-Companion-App/releases). De lokale 1.0.5-build is een releasekandidaat; hij is nog niet gepubliceerd. Controleer versie en SHA-256 tegen het release-manifest. Een lokaal `target/`-bestand is geen actuele publieke release.
+1. Download een **gepubliceerde en geteste** release voor jouw platform van [GitHub Releases](https://github.com/Fill84/HA-Companion-App/releases). De lokale 1.0.8-build is een releasekandidaat; hij is nog niet gepubliceerd. Controleer versie en SHA-256 tegen het release-manifest. Een lokaal `target/`-bestand is geen actuele publieke release.
 2. Installeer de app en start deze
 3. Vul je Home Assistant server URL en Long-Lived Access Token in bij de eerste setup
-4. De app registreert automatisch je device en sensors in Home Assistant. Op Windows kan de installer optioneel de meegeleverde, ondertekende PawnIO-driver met de eigen Rust-sensorservice installeren voor CPU-temperatuur. De basisapp vereist die keuze niet. Schakel de provider ook in de app-instellingen in.
+4. De app registreert automatisch je device en sensors in Home Assistant. Op Windows installeert onze installer de meegeleverde, ondertekende PawnIO-driver en onze eigen Rust-sensorservice standaard als onderdeel van de app. Een aparte sensorapp of extra schakelaar is niet nodig.
 
 Het toegangstoken wordt in de Windows Credential Manager, macOS Keychain of een Linux Secret Service opgeslagen. Bij een upgrade wordt een eerder token uit `settings.json` alleen na succesvolle overdracht naar de OS-kluis uit dat bestand verwijderd. Als de kluis in de huidige sessie niet beschikbaar is, mislukt het opslaan met een foutmelding; op Linux is hiervoor een werkende Secret Service in de desktopsessie nodig. De afhandeling in een Windows-SSH-sessie is nog niet representatief voor een interactieve appstart en staat in de [verificatiestatus](docs/plans/2026-09-24-verificatiestatus.md).
 
@@ -66,7 +66,7 @@ HA-Companion-App/
 
 ## CPU-temperatuur en hostbelasting
 
-De basisapp bevat geen WinRing0-driver. CPU-gebruik, frequentie en model werken zonder temperatuurdriver. De Windows NSIS-installer biedt optioneel de meegeleverde, Microsoft-ondertekende PawnIO-driver en onze eigen Rust-sensorservice aan; de gewone app vraagt alleen een beperkte lokale momentopname aan. Er is geen .NET-helper of aparte sensorapp. Zonder ondersteunde meting blijft CPU-temperatuur `unknown`. Installatie en echte Intel-metingen zijn op `phill-pc` en `beast-unit` bevestigd; alleen op `phill-pc` is de volledige route tot de HA-kaart bevestigd. De huidige releasekandidaat moet nog integraal worden getest.
+De app bevat geen WinRing0-driver. Op Windows installeert onze NSIS-installer standaard de meegeleverde, Microsoft-ondertekende PawnIO-driver en onze eigen Rust-sensorservice; de gewone app vraagt alleen een beperkte lokale momentopname aan. Er is geen .NET-helper of aparte sensorapp. Zonder ondersteunde meting blijft CPU-temperatuur `unknown`. Installatie en echte Intel-metingen zijn op `phill-pc` en `beast-unit` bevestigd; de vernieuwde standaardinstallatie moet nog integraal worden getest.
 
 De collector levert één snapshot per meetronde en hergebruikt de basis-systeemmetingen. Zie de [geïntegreerde sensorspecificatie](docs/specs/2026-09-24-integrated-sensors.md), het [uitvoeringsplan](docs/plans/2026-09-24-integrated-sensors.md) en de [sensor-supportmatrix](docs/specs/2026-09-24-sensor-support.md). Bestaande WinRing0-services worden niet automatisch verwijderd; een upgrade van een oude installatie vraagt nog migratievalidatie.
 

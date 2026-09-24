@@ -5,6 +5,28 @@
 let currentSettings = null;
 let pendingSensorPreferences = {};
 let settingsFocusReturn = null;
+let versionRequestId = 0;
+
+async function refreshSettingsVersions(settings) {
+    const requestId = ++versionRequestId;
+    document.getElementById("settings-app-version").textContent = settings.app_version
+        ? `v${settings.app_version}` : t("version_unknown");
+    const integrationVersion = document.getElementById("settings-integration-version");
+    if (!settings.is_registered) {
+        integrationVersion.textContent = t("version_not_connected");
+        return;
+    }
+
+    integrationVersion.textContent = t("version_checking");
+    try {
+        const version = await window.__TAURI__.core.invoke("get_integration_version");
+        if (requestId !== versionRequestId) return;
+        integrationVersion.textContent = version ? `v${version}` : t("version_unknown");
+    } catch {
+        if (requestId !== versionRequestId) return;
+        integrationVersion.textContent = t("version_unavailable");
+    }
+}
 
 /**
  * Open settings modal and populate with current values
@@ -23,8 +45,6 @@ async function openSettings() {
         document.getElementById("settings-interval").value = currentSettings.update_interval || 60;
         document.getElementById("settings-language").value = currentSettings.language || "en";
         document.getElementById("settings-autostart").checked = currentSettings.autostart || false;
-        document.getElementById("settings-temperature-provider").checked = currentSettings.cpu_temperature_provider || false;
-        document.getElementById("temperature-provider-group").classList.toggle("hidden", !currentSettings.cpu_temperature_provider_supported);
 
         // Device info
         document.getElementById("info-device-id").textContent = currentSettings.device_id || "-";
@@ -50,6 +70,7 @@ async function openSettings() {
         // Show modal
         document.getElementById("settings-overlay").classList.remove("hidden");
         document.getElementById("settings-close").focus?.();
+        void refreshSettingsVersions(currentSettings);
     } catch (err) {
         console.error("Failed to load settings:", err);
     }
@@ -60,6 +81,7 @@ async function openSettings() {
  */
 async function closeSettings() {
     if (document.getElementById("settings-overlay").classList.contains("hidden")) return;
+    versionRequestId++;
     document.getElementById("settings-overlay").classList.add("hidden");
     settingsFocusReturn?.focus?.();
     settingsFocusReturn = null;
@@ -83,7 +105,7 @@ async function saveSettings() {
 
     try {
         if (!Number.isInteger(interval) || interval < 5 || interval > 3600) {
-            throw new Error("Update interval must be between 5 and 3600 seconds");
+            throw new Error(t("error_update_interval"));
         }
         await window.__TAURI__.core.invoke("save_settings", {
             serverUrl: serverUrl,
@@ -91,7 +113,6 @@ async function saveSettings() {
             updateInterval: interval,
             language: language,
             autostart: autostart,
-            cpuTemperatureProvider: document.getElementById("settings-temperature-provider").checked,
             enabledSensors: pendingSensorPreferences,
         });
 
@@ -106,7 +127,7 @@ async function saveSettings() {
         await closeSettings();
     } catch (err) {
         console.error("Failed to save settings:", err);
-        alert("Failed to save settings: " + err);
+        alert(t("settings_save_failed") + ": " + err);
     }
 }
 
@@ -186,6 +207,7 @@ async function reconnectNow() {
             const statusInfo = document.getElementById("info-status");
             statusInfo.textContent = fresh.is_registered ? t("registered") : t("not_registered");
             statusInfo.className = "info-value " + (fresh.is_registered ? "status-ok" : "status-error");
+            void refreshSettingsVersions(fresh);
         } catch (e) { /* best effort */ }
 
         statusEl.classList.add("status-ok");
@@ -211,7 +233,7 @@ async function showMyIp() {
         el.textContent = ip || "-";
     } catch (err) {
         console.error("Failed to get IP:", err);
-        el.textContent = t("error") || "Error";
+        el.textContent = t("error_generic");
     }
     btn.disabled = false;
 }
