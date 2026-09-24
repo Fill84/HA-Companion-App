@@ -57,31 +57,6 @@ const translations = {
         show_password: "Show password",
         hide_password: "Hide password",
 
-        // Sensor names
-        cpu_usage: "CPU Usage",
-        cpu_frequency: "CPU Frequency",
-        cpu_temperature: "CPU Temperature",
-        cpu_model: "CPU Model",
-        memory_usage: "Memory Usage",
-        memory_used: "Memory Used",
-        memory_total: "Memory Total",
-        disk_usage: "Disk Usage",
-        gpu: "GPU Sensors",
-        network: "Network Sensors",
-        battery: "Battery Sensors",
-        os_version: "OS Version",
-        hostname: "Hostname",
-        motherboard: "Motherboard",
-        bios_version: "BIOS Version",
-        bios_vendor: "BIOS Vendor",
-        bios_date: "BIOS Date",
-        swap_usage: "Swap Usage",
-        system_uptime: "System Uptime",
-        process_count: "Process Count",
-        last_boot: "Last Boot",
-        logged_in_user: "Logged-in User",
-        display: "Display",
-
         // Messages
         error_server_url: "Please enter a valid server URL",
         error_token: "Please enter an access token",
@@ -150,31 +125,6 @@ const translations = {
         show_password: "Wachtwoord tonen",
         hide_password: "Wachtwoord verbergen",
 
-        // Sensor names
-        cpu_usage: "CPU Gebruik",
-        cpu_frequency: "CPU Snelheid",
-        cpu_temperature: "CPU Temperatuur",
-        cpu_model: "CPU Model",
-        memory_usage: "Geheugen Gebruik",
-        memory_used: "Geheugen Gebruikt",
-        memory_total: "Geheugen Totaal",
-        disk_usage: "Schijf Gebruik",
-        gpu: "GPU Sensoren",
-        network: "Netwerk Sensoren",
-        battery: "Batterij Sensoren",
-        os_version: "OS Versie",
-        hostname: "Hostnaam",
-        motherboard: "Moederbord",
-        bios_version: "BIOS Versie",
-        bios_vendor: "BIOS-leverancier",
-        bios_date: "BIOS-datum",
-        swap_usage: "Wisselgeheugengebruik",
-        system_uptime: "Systeem-uptime",
-        process_count: "Aantal processen",
-        last_boot: "Laatste opstarttijd",
-        logged_in_user: "Aangemelde gebruiker",
-        display: "Beeldscherm",
-
         // Messages
         error_server_url: "Voer een geldige server URL in",
         error_token: "Voer een toegangstoken in",
@@ -230,9 +180,8 @@ function updateUITranslations() {
         }
     });
     document.querySelectorAll("[data-sensor-key]").forEach((el) => {
-        const key = el.getAttribute("data-sensor-key");
-        el.textContent = translations[currentLanguage][key] || translations.en[key]
-            || el.getAttribute("data-sensor-name") || key;
+        el.textContent = el.getAttribute(currentLanguage === "nl" ? "data-sensor-nl" : "data-sensor-en")
+            || el.getAttribute("data-sensor-en") || el.getAttribute("data-sensor-key");
     });
     document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => {
         el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria-label")));

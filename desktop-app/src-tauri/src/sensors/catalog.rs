@@ -1,0 +1,147 @@
+pub struct SensorChoice {
+    pub id: &'static str,
+    pub name_en: &'static str,
+    pub name_nl: &'static str,
+    pub updates_at_interval: bool,
+}
+
+pub const SENSOR_CHOICES: &[SensorChoice] = &[
+    SensorChoice {
+        id: "cpu_usage",
+        name_en: "CPU Usage",
+        name_nl: "CPU Gebruik",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "cpu_frequency",
+        name_en: "CPU Frequency",
+        name_nl: "CPU Snelheid",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "cpu_temperature",
+        name_en: "CPU Temperature",
+        name_nl: "CPU Temperatuur",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "cpu_model",
+        name_en: "CPU Model",
+        name_nl: "CPU Model",
+        updates_at_interval: false,
+    },
+    SensorChoice {
+        id: "memory_usage",
+        name_en: "Memory Usage",
+        name_nl: "Geheugen Gebruik",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "memory_used",
+        name_en: "Memory Used",
+        name_nl: "Geheugen Gebruikt",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "memory_total",
+        name_en: "Memory Total",
+        name_nl: "Geheugen Totaal",
+        updates_at_interval: false,
+    },
+    SensorChoice {
+        id: "swap_usage",
+        name_en: "Swap Usage",
+        name_nl: "Wisselgeheugengebruik",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "disk_usage",
+        name_en: "Disk Usage",
+        name_nl: "Schijf Gebruik",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "gpu",
+        name_en: "GPU Sensors",
+        name_nl: "GPU Sensoren",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "network",
+        name_en: "Network Sensors",
+        name_nl: "Netwerk Sensoren",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "battery",
+        name_en: "Battery Sensors",
+        name_nl: "Batterij Sensoren",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "os_version",
+        name_en: "OS Version",
+        name_nl: "OS Versie",
+        updates_at_interval: false,
+    },
+    SensorChoice {
+        id: "hostname",
+        name_en: "Hostname",
+        name_nl: "Hostnaam",
+        updates_at_interval: false,
+    },
+    SensorChoice {
+        id: "motherboard",
+        name_en: "Motherboard",
+        name_nl: "Moederbord",
+        updates_at_interval: false,
+    },
+    SensorChoice {
+        id: "bios_version",
+        name_en: "BIOS Version",
+        name_nl: "BIOS Versie",
+        updates_at_interval: false,
+    },
+    SensorChoice {
+        id: "bios_vendor",
+        name_en: "BIOS Vendor",
+        name_nl: "BIOS-leverancier",
+        updates_at_interval: false,
+    },
+    SensorChoice {
+        id: "bios_date",
+        name_en: "BIOS Date",
+        name_nl: "BIOS-datum",
+        updates_at_interval: false,
+    },
+    SensorChoice {
+        id: "system_uptime",
+        name_en: "System Uptime",
+        name_nl: "Systeem-uptime",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "process_count",
+        name_en: "Process Count",
+        name_nl: "Aantal processen",
+        updates_at_interval: true,
+    },
+    SensorChoice {
+        id: "last_boot",
+        name_en: "Last Boot",
+        name_nl: "Laatste opstarttijd",
+        updates_at_interval: false,
+    },
+    SensorChoice {
+        id: "logged_in_user",
+        name_en: "Logged-in User",
+        name_nl: "Aangemelde gebruiker",
+        updates_at_interval: false,
+    },
+    SensorChoice {
+        id: "display",
+        name_en: "Display",
+        name_nl: "Beeldscherm",
+        updates_at_interval: false,
+    },
+];

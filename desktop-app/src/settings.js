@@ -176,9 +176,10 @@ async function populateSensorList() {
             const label = document.createElement("label");
             label.htmlFor = `sensor-${sensor.id}`;
             label.setAttribute("data-sensor-key", sensor.id);
-            label.setAttribute("data-sensor-name", sensor.name);
-            const translatedName = t(sensor.id);
-            label.textContent = translatedName === sensor.id ? sensor.name : translatedName;
+            label.setAttribute("data-sensor-en", sensor.name);
+            label.setAttribute("data-sensor-nl", sensor.name_nl || sensor.name);
+            label.textContent = typeof currentLanguage !== "undefined" && currentLanguage === "nl"
+                ? (sensor.name_nl || sensor.name) : sensor.name;
 
             const badge = document.createElement("span");
             badge.className = "sensor-badge " + (sensor.updates_at_interval ? "badge-dynamic" : "badge-static");

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
 use super::temperature::TemperatureReader;
-use super::{battery, cpu, disk, gpu, memory, network, system_info};
+use super::{battery, catalog, cpu, disk, gpu, memory, network, system_info};
 
 fn assign_sensor_suffixes(
     map: &mut HashMap<String, String>,
@@ -990,39 +990,14 @@ impl SensorCollector {
 
     /// Get list of all possible sensors and their enabled status
     pub fn get_sensor_list(&self) -> Vec<SensorListItem> {
-        let all_sensors = vec![
-            ("cpu_usage", "CPU Usage", true),
-            ("cpu_frequency", "CPU Frequency", true),
-            ("cpu_temperature", "CPU Temperature", true),
-            ("cpu_model", "CPU Model", false),
-            ("memory_usage", "Memory Usage", true),
-            ("memory_used", "Memory Used", true),
-            ("memory_total", "Memory Total", false),
-            ("swap_usage", "Swap Usage", true),
-            ("disk_usage", "Disk Usage", true),
-            ("gpu", "GPU Sensors", true),
-            ("network", "Network Sensors", true),
-            ("battery", "Battery Sensors", true),
-            ("os_version", "OS Version", false),
-            ("hostname", "Hostname", false),
-            ("motherboard", "Motherboard", false),
-            ("bios_version", "BIOS Version", false),
-            ("bios_vendor", "BIOS Vendor", false),
-            ("bios_date", "BIOS Date", false),
-            ("system_uptime", "System Uptime", true),
-            ("process_count", "Process Count", true),
-            ("last_boot", "Last Boot Time", false),
-            ("logged_in_user", "Logged In User", false),
-            ("display", "Display Resolution", false),
-        ];
-
-        all_sensors
-            .into_iter()
-            .map(|(id, name, updates_at_interval)| SensorListItem {
-                id: id.to_string(),
-                name: name.to_string(),
-                enabled: self.is_enabled(id),
-                updates_at_interval,
+        catalog::SENSOR_CHOICES
+            .iter()
+            .map(|choice| SensorListItem {
+                id: choice.id.to_string(),
+                name: choice.name_en.to_string(),
+                name_nl: choice.name_nl.to_string(),
+                enabled: self.is_enabled(choice.id),
+                updates_at_interval: choice.updates_at_interval,
             })
             .collect()
     }
@@ -1040,6 +1015,7 @@ impl SensorCollector {
 pub struct SensorListItem {
     pub id: String,
     pub name: String,
+    pub name_nl: String,
     pub enabled: bool,
     pub updates_at_interval: bool,
 }
@@ -1047,6 +1023,20 @@ pub struct SensorListItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sensor_choices_keep_ids_and_localized_labels() {
+        let collector = SensorCollector::new(&HashMap::new(), &HashMap::new(), &HashMap::new());
+        let choices = collector.get_sensor_list();
+        assert_eq!(choices.len(), 23);
+        assert_eq!(choices[0].id, "cpu_usage");
+        assert_eq!(choices[0].name, "CPU Usage");
+        assert_eq!(choices[0].name_nl, "CPU Gebruik");
+        assert!(choices[0].enabled);
+        assert!(choices[0].updates_at_interval);
+        assert_eq!(choices.last().unwrap().id, "display");
+        assert!(!choices.last().unwrap().updates_at_interval);
+    }
 
     #[test]
     fn disk_capacity_attributes_are_decimal_gb_numbers() {
