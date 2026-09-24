@@ -247,6 +247,18 @@ impl HaClient {
         Ok(())
     }
 
+    /// Check the saved token without changing device registration or its webhook.
+    pub async fn check_access_token(&self) -> Result<reqwest::StatusCode, String> {
+        let url = format!("{}/api/desktop_app/registrations", self.base_url());
+        self.client
+            .get(url)
+            .bearer_auth(&self.access_token)
+            .send()
+            .await
+            .map(|response| response.status())
+            .map_err(Self::webhook_transport_error)
+    }
+
     pub fn set_webhook_id(&mut self, webhook_id: String) {
         if self.webhook_id.as_deref() != Some(webhook_id.as_str()) {
             self.registered_descriptors = None;

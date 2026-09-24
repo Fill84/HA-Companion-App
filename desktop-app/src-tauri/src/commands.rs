@@ -412,6 +412,39 @@ pub enum ConnectionStatus {
     TokenInvalid,
 }
 
+fn token_connection_status(status: reqwest::StatusCode) -> Option<ConnectionStatus> {
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        Some(ConnectionStatus::TokenInvalid)
+    } else if !status.is_success() {
+        Some(ConnectionStatus::Unreachable {
+            reason: format!("Token check returned HTTP {status}"),
+        })
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod connection_status_tests {
+    use super::{token_connection_status, ConnectionStatus};
+    use reqwest::StatusCode;
+
+    #[test]
+    fn only_unauthorized_means_saved_token_is_invalid() {
+        assert!(token_connection_status(StatusCode::OK).is_none());
+        assert!(matches!(
+            token_connection_status(StatusCode::UNAUTHORIZED),
+            Some(ConnectionStatus::TokenInvalid)
+        ));
+        for status in [StatusCode::FORBIDDEN, StatusCode::SERVICE_UNAVAILABLE] {
+            assert!(matches!(
+                token_connection_status(status),
+                Some(ConnectionStatus::Unreachable { .. })
+            ));
+        }
+    }
+}
+
 /// Verify the integration is reachable and that any stored webhook is alive.
 /// Called by the frontend on startup so we can show a meaningful UI instead
 /// of "everything looks fine" followed by a silent loop of update errors.
@@ -439,6 +472,15 @@ pub async fn check_connection(
         return Ok(ConnectionStatus::Unreachable {
             reason: e.to_string(),
         });
+    }
+
+    match ha_client.check_access_token().await {
+        Ok(status) => {
+            if let Some(connection_status) = token_connection_status(status) {
+                return Ok(connection_status);
+            }
+        }
+        Err(reason) => return Ok(ConnectionStatus::Unreachable { reason }),
     }
 
     if !has_webhook {
@@ -483,6 +525,7 @@ pub async fn mark_unregistered(
     log::warn!("Marking device unregistered: {}", reason);
     if let Err(e) = settings.clear_webhook(app) {
         log::error!("Failed to persist unregistered state: {}", e);
+        return;
     }
     drop(settings);
     state.ha_client.lock().await.clear_webhook_id();

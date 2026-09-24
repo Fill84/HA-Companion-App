@@ -122,6 +122,21 @@ fn rounded(value: f64, decimal_places: i32) -> f64 {
     (value * factor).round() / factor
 }
 
+fn disk_attributes(partition: &disk::PartitionData) -> HashMap<String, serde_json::Value> {
+    HashMap::from([
+        (
+            "total_gb".into(),
+            serde_json::json!(rounded(partition.total_bytes as f64 / 1_000_000_000.0, 1)),
+        ),
+        (
+            "used_gb".into(),
+            serde_json::json!(rounded(partition.used_bytes as f64 / 1_000_000_000.0, 1)),
+        ),
+        ("filesystem".into(), serde_json::json!(partition.filesystem)),
+        ("disk_type".into(), serde_json::json!(partition.disk_type)),
+    ])
+}
+
 /// Format a UNIX timestamp (seconds since 1970-01-01 UTC) as an RFC3339 string
 /// with a `+00:00` offset suffix. Returns `None` for the failure-mode value 0,
 /// so the Last Boot sensor can be omitted entirely rather than reporting 1970.
@@ -443,26 +458,7 @@ impl SensorCollector {
                     unit_of_measurement: Some("%".into()),
                     state_class: Some("measurement".into()),
                     icon: Some("mdi:harddisk".into()),
-                    attributes: {
-                        let mut attrs = HashMap::new();
-                        attrs.insert(
-                            "total_gb".into(),
-                            serde_json::json!(format!(
-                                "{:.1}",
-                                partition.total_bytes as f64 / 1_000_000_000.0
-                            )),
-                        );
-                        attrs.insert(
-                            "used_gb".into(),
-                            serde_json::json!(format!(
-                                "{:.1}",
-                                partition.used_bytes as f64 / 1_000_000_000.0
-                            )),
-                        );
-                        attrs.insert("filesystem".into(), serde_json::json!(partition.filesystem));
-                        attrs.insert("disk_type".into(), serde_json::json!(partition.disk_type));
-                        attrs
-                    },
+                    attributes: disk_attributes(partition),
                     update_at_interval: true,
                 });
             }
@@ -1051,6 +1047,25 @@ pub struct SensorListItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn disk_capacity_attributes_are_decimal_gb_numbers() {
+        let partition = disk::PartitionData {
+            name: "example".into(),
+            mount_point: "/".into(),
+            physical_id: None,
+            total_bytes: 1_000_000_000,
+            used_bytes: 500_000_000,
+            available_bytes: 500_000_000,
+            usage_percent: 50.0,
+            filesystem: "ext4".into(),
+            disk_type: "SSD".into(),
+        };
+        let attributes = disk_attributes(&partition);
+        assert_eq!(attributes["total_gb"], serde_json::json!(1.0));
+        assert_eq!(attributes["used_gb"], serde_json::json!(0.5));
+        assert!(attributes["total_gb"].is_number());
+    }
 
     #[test]
     fn verified_gpu_aliases_restore_legacy_ids_without_reassigning_another_gpu() {
