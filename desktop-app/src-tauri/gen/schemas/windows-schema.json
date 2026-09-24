@@ -177,6 +177,162 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the check_connection command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-check-connection",
+          "markdownDescription": "Enables the check_connection command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_current_language command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-current-language",
+          "markdownDescription": "Enables the get_current_language command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_integration_version command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-integration-version",
+          "markdownDescription": "Enables the get_integration_version command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_my_public_ip command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-my-public-ip",
+          "markdownDescription": "Enables the get_my_public_ip command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_sensor_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-sensor-list",
+          "markdownDescription": "Enables the get_sensor_list command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-settings",
+          "markdownDescription": "Enables the get_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the hide_dashboard command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-hide-dashboard",
+          "markdownDescription": "Enables the hide_dashboard command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load_dashboard command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load-dashboard",
+          "markdownDescription": "Enables the load_dashboard command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the register_device command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-register-device",
+          "markdownDescription": "Enables the register_device command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the reregister_device command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-reregister-device",
+          "markdownDescription": "Enables the reregister_device command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-settings",
+          "markdownDescription": "Enables the save_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the toggle_sensor command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-toggle-sensor",
+          "markdownDescription": "Enables the toggle_sensor command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_sensors_now command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-sensors-now",
+          "markdownDescription": "Enables the update_sensors_now command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the check_connection command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-check-connection",
+          "markdownDescription": "Denies the check_connection command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_current_language command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-current-language",
+          "markdownDescription": "Denies the get_current_language command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_integration_version command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-integration-version",
+          "markdownDescription": "Denies the get_integration_version command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_my_public_ip command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-my-public-ip",
+          "markdownDescription": "Denies the get_my_public_ip command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_sensor_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-sensor-list",
+          "markdownDescription": "Denies the get_sensor_list command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-settings",
+          "markdownDescription": "Denies the get_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the hide_dashboard command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-hide-dashboard",
+          "markdownDescription": "Denies the hide_dashboard command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load_dashboard command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load-dashboard",
+          "markdownDescription": "Denies the load_dashboard command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the register_device command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-register-device",
+          "markdownDescription": "Denies the register_device command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the reregister_device command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-reregister-device",
+          "markdownDescription": "Denies the reregister_device command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-settings",
+          "markdownDescription": "Denies the save_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the toggle_sensor command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-toggle-sensor",
+          "markdownDescription": "Denies the toggle_sensor command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_sensors_now command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-sensors-now",
+          "markdownDescription": "Denies the update_sensors_now command without any pre-configured scope."
+        },
+        {
           "description": "This permission set configures if your\napplication can enable or disable auto\nstarting the application on boot.\n\n#### Granted Permissions\n\nIt allows all to check, enable and\ndisable the automatic start on boot.\n\n\n#### This default permission set includes:\n\n- `allow-enable`\n- `allow-disable`\n- `allow-is-enabled`",
           "type": "string",
           "const": "autostart:default",

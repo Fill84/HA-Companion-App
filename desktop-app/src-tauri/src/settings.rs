@@ -55,9 +55,14 @@ fn write_settings_document(
             .map_err(|error| format!("Could not encode settings: {error}"))?;
     let temporary = parent.join(format!(".settings-{}.tmp", uuid::Uuid::new_v4()));
     let result = (|| -> Result<(), String> {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options
             .open(&temporary)
             .map_err(|error| format!("Could not create temporary settings file: {error}"))?;
         file.write_all(&content)

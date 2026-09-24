@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-toggle-sensor"
+description = "Enables the toggle_sensor command without any pre-configured scope."
+commands.allow = ["toggle_sensor"]
+
+[[permission]]
+identifier = "deny-toggle-sensor"
+description = "Denies the toggle_sensor command without any pre-configured scope."
+commands.deny = ["toggle_sensor"]
