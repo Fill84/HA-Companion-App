@@ -41,13 +41,11 @@ pub fn collect() -> GpuData {
         }
     }
 
-    // Linux: try rocm-smi for AMD, sysfs for Intel
+    // Linux DRM/sysfs exposes PCI identity and, where supported, AMD telemetry.
     #[cfg(target_os = "linux")]
     {
-        if gpus.is_empty() {
-            if let Some(linux_gpus) = collect_linux() {
-                gpus.extend(linux_gpus);
-            }
+        if let Some(linux_gpus) = collect_linux(gpus.iter().any(|gpu| gpu.vendor == "NVIDIA")) {
+            gpus.extend(linux_gpus);
         }
     }
 
@@ -182,65 +180,128 @@ mod wmi_tests {
 }
 
 #[cfg(target_os = "linux")]
-fn collect_linux() -> Option<Vec<GpuInfo>> {
+fn collect_linux(nvidia_available: bool) -> Option<Vec<GpuInfo>> {
+    collect_linux_from(std::path::Path::new("/sys/class/drm"), nvidia_available)
+}
+
+#[cfg(target_os = "linux")]
+fn collect_linux_from(root: &std::path::Path, nvidia_available: bool) -> Option<Vec<GpuInfo>> {
     let mut gpus = Vec::new();
-
-    // Try rocm-smi for AMD
-    if let Ok(output) = std::process::Command::new("rocm-smi")
-        .arg("--showtemp")
-        .arg("--showuse")
-        .arg("--showproductname")
-        .output()
-    {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // Basic parsing of rocm-smi output
-            if let Some(name) = stdout.lines().find(|l| l.contains("Card series")) {
-                let gpu_name = name
-                    .split(':')
-                    .last()
-                    .unwrap_or("AMD GPU")
-                    .trim()
-                    .to_string();
-                gpus.push(GpuInfo {
-                    physical_id: None,
-                    name: gpu_name,
-                    vendor: "AMD".to_string(),
-                    usage_percent: None,
-                    temperature: None,
-                    vram_total_mb: None,
-                    vram_used_mb: None,
-                    driver_version: None,
-                });
-            }
+    for entry in std::fs::read_dir(root).ok()?.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with("card")
+            || name.len() == 4
+            || !name[4..].chars().all(|c| c.is_ascii_digit())
+        {
+            continue;
         }
-    }
-
-    // Check sysfs for Intel GPU
-    if std::path::Path::new("/sys/class/drm/card0/device/vendor").exists() {
-        if let Ok(vendor) = std::fs::read_to_string("/sys/class/drm/card0/device/vendor") {
-            if vendor.trim() == "0x8086" {
-                // Intel vendor ID
-                gpus.push(GpuInfo {
-                    physical_id: std::fs::canonicalize("/sys/class/drm/card0/device")
-                        .ok()
-                        .map(|path| format!("sysfs:{}", path.display())),
-                    name: "Intel Integrated Graphics".to_string(),
-                    vendor: "Intel".to_string(),
-                    usage_percent: None,
-                    temperature: None,
-                    vram_total_mb: None,
-                    vram_used_mb: None,
-                    driver_version: None,
-                });
-            }
+        let device = entry.path().join("device");
+        let vendor = match std::fs::read_to_string(device.join("vendor"))
+            .ok()
+            .map(|value| value.trim().to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("0x1002") => "AMD",
+            Some("0x8086") => "Intel",
+            Some("0x10de") => "NVIDIA",
+            _ => continue,
+        };
+        if vendor == "NVIDIA" && nvidia_available {
+            continue;
         }
+        let pci_device = std::fs::read_to_string(device.join("device"))
+            .ok()
+            .map(|value| value.trim().to_string());
+        let model = pci_device
+            .as_deref()
+            .map(|id| format!("{vendor} GPU {id}"))
+            .unwrap_or_else(|| format!("{vendor} GPU"));
+        let physical_id = std::fs::canonicalize(&device)
+            .ok()
+            .map(|path| format!("sysfs:{}", path.display()));
+        let read_number = |file: &str| -> Option<u64> {
+            std::fs::read_to_string(device.join(file))
+                .ok()?
+                .trim()
+                .parse()
+                .ok()
+        };
+        let temperature = if vendor == "AMD" {
+            std::fs::read_dir(device.join("hwmon"))
+                .ok()
+                .and_then(|entries| {
+                    entries.flatten().find_map(|hwmon| {
+                        std::fs::read_to_string(hwmon.path().join("temp1_input"))
+                            .ok()?
+                            .trim()
+                            .parse::<f32>()
+                            .ok()
+                    })
+                })
+                .map(|millidegrees| millidegrees / 1000.0)
+                .filter(|celsius| celsius.is_finite() && *celsius > 0.0 && *celsius < 150.0)
+        } else {
+            None
+        };
+        gpus.push(GpuInfo {
+            physical_id,
+            name: model,
+            vendor: vendor.to_string(),
+            usage_percent: if vendor == "AMD" {
+                read_number("gpu_busy_percent")
+                    .filter(|percent| *percent <= 100)
+                    .map(|percent| percent as f32)
+            } else {
+                None
+            },
+            temperature,
+            vram_total_mb: read_number("mem_info_vram_total").map(|bytes| bytes / 1_000_000),
+            vram_used_mb: read_number("mem_info_vram_used").map(|bytes| bytes / 1_000_000),
+            driver_version: None,
+        });
     }
 
     if gpus.is_empty() {
         None
     } else {
         Some(gpus)
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::collect_linux_from;
+    use std::fs;
+
+    #[test]
+    fn drm_snapshot_reads_amd_units_and_keeps_a_second_adapter() {
+        let root = std::env::temp_dir().join(format!(
+            "ha-companion-gpu-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let amd = root.join("card0/device");
+        let intel = root.join("card1/device");
+        fs::create_dir_all(amd.join("hwmon/hwmon0")).unwrap();
+        fs::create_dir_all(&intel).unwrap();
+        fs::write(amd.join("vendor"), "0x1002\n").unwrap();
+        fs::write(amd.join("device"), "0x744c\n").unwrap();
+        fs::write(amd.join("gpu_busy_percent"), "42\n").unwrap();
+        fs::write(amd.join("mem_info_vram_total"), "16000000000\n").unwrap();
+        fs::write(amd.join("hwmon/hwmon0/temp1_input"), "54000\n").unwrap();
+        fs::write(intel.join("vendor"), "0x8086\n").unwrap();
+        let gpus = collect_linux_from(&root, false).unwrap();
+        assert_eq!(gpus.len(), 2);
+        let amd_gpu = gpus.iter().find(|gpu| gpu.vendor == "AMD").unwrap();
+        assert_eq!(amd_gpu.temperature, Some(54.0));
+        assert_eq!(amd_gpu.usage_percent, Some(42.0));
+        assert_eq!(amd_gpu.vram_total_mb, Some(16_000));
+        assert!(gpus.iter().any(|gpu| gpu.vendor == "Intel"));
+        fs::remove_dir_all(&root).unwrap();
     }
 }
 
