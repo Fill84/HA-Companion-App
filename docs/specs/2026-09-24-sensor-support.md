@@ -1,5 +1,7 @@
 # Sensorbronnen en platformcontract
 
+> De Windows-providerkeuze in dit document is vervangen door de [geïntegreerde sensoreis](2026-09-24-integrated-sensors.md). De tabel hieronder beschrijft de bestaande, nog niet vervangen implementatie en het oorspronkelijke bronnenonderzoek.
+
 Onderzocht op 24 september 2026 voor de [projectherstelspecificatie](2026-09-24-project-recovery.md). **Conclusie:** er is geen aangetoonde, lichte, universele API die *alle* fysieke sensoren op *alle* hardware en Windows, macOS en Linux als één betrouwbare call ontsluit. Een call naar onze eigen collector kan wel één snapshot retourneren, maar die collector moet intern OS- en vendorproviders gebruiken. Een enkele IPC-call vermindert communicatieoverhead; hij maakt sensor-I/O niet gratis. Dit is een gevolgtrekking uit de uiteenlopende bron-API's hieronder, geen claim dat ieder toekomstig product is uitgesloten.
 
 | Bron | Platform en bereik | Grenzen en keuze |
