@@ -5,6 +5,48 @@
 let setupBusy = false;
 let initialSettings = null;
 let savedTokenInvalid = false;
+let connectionRetryTimer = null;
+let connectionRetryBusy = false;
+
+function stopConnectionRetry() {
+    if (connectionRetryTimer !== null) {
+        window.clearInterval(connectionRetryTimer);
+        connectionRetryTimer = null;
+    }
+}
+
+async function retryUnreachableConnection() {
+    if (connectionRetryBusy || setupBusy || savedTokenInvalid ||
+        document.getElementById("setup-screen").classList.contains("hidden")) return;
+    if (document.getElementById("setup-server-url").value.trim() !== initialSettings?.server_url ||
+        document.getElementById("setup-token").value.trim()) return;
+
+    connectionRetryBusy = true;
+    try {
+        const status = await window.__TAURI__.core.invoke("check_connection");
+        const name = typeof status === "string" ? status : Object.keys(status)[0];
+        if (name === "ok") {
+            await window.__TAURI__.core.invoke("load_dashboard");
+            hideSetupScreen();
+        } else if (name === "token_invalid") {
+            savedTokenInvalid = true;
+            updateSetupTokenRequirement();
+            showSetupScreen("token_invalid");
+        } else if (name === "webhook_dead") {
+            showSetupScreen("webhook_dead");
+        }
+    } catch (error) {
+        console.warn("Connection retry failed:", error);
+    } finally {
+        connectionRetryBusy = false;
+    }
+}
+
+function startConnectionRetry() {
+    if (connectionRetryTimer === null) {
+        connectionRetryTimer = window.setInterval(retryUnreachableConnection, 30_000);
+    }
+}
 
 
 /**
@@ -13,6 +55,8 @@ let savedTokenInvalid = false;
  * useful to tell the user (i.e. they had a registration that just failed).
  */
 function showSetupScreen(reason) {
+    if (reason === "unreachable") startConnectionRetry();
+    else stopConnectionRetry();
     const banner = document.getElementById("setup-banner");
     const bannerText = document.getElementById("setup-banner-text");
     if (banner && bannerText) {
@@ -43,6 +87,7 @@ function showSetupScreen(reason) {
  * Hide the setup screen
  */
 function hideSetupScreen() {
+    stopConnectionRetry();
     document.getElementById("setup-screen").classList.add("hidden");
     const banner = document.getElementById("setup-banner");
     if (banner) banner.classList.add("hidden");
