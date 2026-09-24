@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::Path;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
@@ -29,6 +32,59 @@ fn token_for_server(raw: &str, server_url: &str) -> Option<String> {
     let stored: StoredToken = serde_json::from_str(raw).ok()?;
     (stored.server_url == server_url && !stored.access_token.is_empty())
         .then_some(stored.access_token)
+}
+
+fn persist_entries(
+    app: &AppHandle,
+    entries: Vec<(String, serde_json::Value)>,
+) -> Result<(), String> {
+    let path = tauri_plugin_store::resolve_store_path(app, STORE_PATH)
+        .map_err(|error| format!("Could not locate settings store: {error}"))?;
+    write_settings_document(&path, entries)
+}
+
+fn write_settings_document(
+    path: &Path,
+    entries: Vec<(String, serde_json::Value)>,
+) -> Result<(), String> {
+    let parent = path.parent().ok_or("Invalid settings path")?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("Could not create settings folder: {error}"))?;
+    let content =
+        serde_json::to_vec_pretty(&entries.into_iter().collect::<serde_json::Map<_, _>>())
+            .map_err(|error| format!("Could not encode settings: {error}"))?;
+    let temporary = parent.join(format!(".settings-{}.tmp", uuid::Uuid::new_v4()));
+    let result = (|| -> Result<(), String> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| format!("Could not create temporary settings file: {error}"))?;
+        file.write_all(&content)
+            .and_then(|()| file.sync_all())
+            .map_err(|error| format!("Could not write settings: {error}"))?;
+        drop(file);
+        fs::rename(&temporary, path)
+            .map_err(|error| format!("Could not replace settings file: {error}"))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn verify_settings_document(path: &Path) -> Result<bool, String> {
+    if !path
+        .try_exists()
+        .map_err(|error| format!("Could not check settings store: {error}"))?
+    {
+        return Ok(false);
+    }
+    let bytes =
+        fs::read(path).map_err(|error| format!("Could not read settings store: {error}"))?;
+    serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&bytes)
+        .map_err(|error| format!("Invalid settings store: {error}"))?;
+    Ok(true)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,21 +126,44 @@ impl AppSettings {
         app: &AppHandle,
         identity_map: HashMap<String, String>,
     ) -> Result<(), String> {
-        let store = app.store(STORE_PATH).map_err(|error| error.to_string())?;
+        let store = app
+            .store_builder(STORE_PATH)
+            .disable_auto_save()
+            .build()
+            .map_err(|error| error.to_string())?;
+        let previous = store.get("sensor_identity_map");
         store.set(
             "sensor_identity_map",
             serde_json::to_value(&identity_map).map_err(|error| error.to_string())?,
         );
-        store.save().map_err(|error| error.to_string())?;
+        if let Err(error) = persist_entries(app, store.entries()) {
+            match previous {
+                Some(value) => store.set("sensor_identity_map", value),
+                None => {
+                    store.delete("sensor_identity_map");
+                }
+            }
+            return Err(error);
+        }
         self.sensor_identity_map = identity_map;
         Ok(())
     }
 
     /// Load settings from the Tauri store
     pub fn load(app: &AppHandle) -> Result<Self, String> {
+        let path = tauri_plugin_store::resolve_store_path(app, STORE_PATH)
+            .map_err(|error| format!("Could not locate settings store: {error}"))?;
+        let file_exists = verify_settings_document(&path)?;
         let store = app
-            .store(STORE_PATH)
+            .store_builder(STORE_PATH)
+            .disable_auto_save()
+            .build()
             .map_err(|error| format!("Could not load settings store: {error}"))?;
+        if file_exists {
+            store
+                .reload_ignore_defaults()
+                .map_err(|error| format!("Could not read settings store: {error}"))?;
+        }
 
         let server_url = store
             .get("server_url")
@@ -95,6 +174,9 @@ impl AppSettings {
             .get("access_token")
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_default();
+        if !legacy_token.is_empty() && server_url.is_empty() {
+            return Err("Saved token has no server URL; settings require repair".into());
+        }
 
         let webhook_id = store
             .get("webhook_id")
@@ -111,8 +193,7 @@ impl AppSettings {
             None => {
                 let id = uuid::Uuid::new_v4().to_string();
                 store.set("device_id", serde_json::json!(id));
-                store
-                    .save()
+                persist_entries(app, store.entries())
                     .map_err(|error| format!("Could not save new device identity: {error}"))?;
                 id
             }
@@ -126,9 +207,21 @@ impl AppSettings {
         let legacy_gpu_aliases =
             parse_saved_map(store.get("legacy_gpu_aliases"), "legacy_gpu_aliases")?;
 
-        let access_token =
-            match token_entry(&device_id).and_then(|entry| match entry.get_password() {
-                Ok(raw) => Ok(token_for_server(&raw, &server_url).unwrap_or_default()),
+        let access_token = if server_url.is_empty() && legacy_token.is_empty() {
+            String::new()
+        } else {
+            token_entry(&device_id).and_then(|entry| match entry.get_password() {
+                Ok(raw) => match token_for_server(&raw, &server_url) {
+                    Some(token) => Ok(token),
+                    None if !legacy_token.is_empty() => {
+                        let payload = encoded_token(&server_url, &legacy_token)?;
+                        entry.set_password(&payload).map_err(|error| {
+                            format!("Could not migrate token to system credential store: {error}")
+                        })?;
+                        Ok(legacy_token.clone())
+                    }
+                    None => Ok(String::new()),
+                },
                 Err(keyring::Error::NoEntry)
                     if !legacy_token.is_empty() && !server_url.is_empty() =>
                 {
@@ -136,19 +229,19 @@ impl AppSettings {
                     entry.set_password(&payload).map_err(|error| {
                         format!("Could not migrate token to system credential store: {error}")
                     })?;
-                    store.delete("access_token");
-                    store.save().map_err(|error| error.to_string())?;
                     Ok(legacy_token.clone())
                 }
                 Err(keyring::Error::NoEntry) => Ok(String::new()),
                 Err(error) => Err(format!("Could not read system credential store: {error}")),
-            }) {
-                Ok(token) => token,
-                Err(error) => {
-                    log::error!("{error}");
-                    String::new()
-                }
-            };
+            })?
+        };
+        if !legacy_token.is_empty() {
+            store.delete("access_token");
+            if let Err(error) = persist_entries(app, store.entries()) {
+                store.set("access_token", serde_json::json!(legacy_token));
+                return Err(format!("Could not remove legacy plaintext token: {error}"));
+            }
+        }
 
         let update_interval = store
             .get("update_interval")
@@ -181,9 +274,12 @@ impl AppSettings {
 
     /// Save settings to the Tauri store
     pub fn save(&self, app: &AppHandle) -> Result<(), String> {
-        let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
-
-        store.set("server_url", serde_json::json!(self.server_url));
+        let store = app
+            .store_builder(STORE_PATH)
+            .disable_auto_save()
+            .build()
+            .map_err(|error| error.to_string())?;
+        let previous_settings = store.entries();
         let entry = token_entry(&self.device_id)?;
         let previous = match entry.get_password() {
             Ok(raw) => Some(raw),
@@ -197,6 +293,7 @@ impl AppSettings {
                 format!("Could not save token in system credential store: {error}")
             })?;
         }
+        store.set("server_url", serde_json::json!(self.server_url));
         store.delete("access_token");
         store.set("webhook_id", serde_json::json!(self.webhook_id));
         store.set("device_id", serde_json::json!(self.device_id));
@@ -216,7 +313,11 @@ impl AppSettings {
         );
         store.set("autostart", serde_json::json!(self.autostart));
         store.delete("cpu_temperature_provider");
-        if let Err(error) = store.save() {
+        if let Err(error) = persist_entries(app, store.entries()) {
+            store.clear();
+            for (key, value) in previous_settings {
+                store.set(key, value);
+            }
             if credential_changed {
                 let rollback = match previous {
                     Some(raw) => entry.set_password(&raw),
@@ -226,7 +327,7 @@ impl AppSettings {
                     log::error!("Could not restore credential after settings save failure: {rollback_error}");
                 }
             }
-            return Err(error.to_string());
+            return Err(error);
         }
         Ok(())
     }
@@ -238,8 +339,12 @@ impl AppSettings {
         if self.webhook_id.is_none() {
             return Ok(());
         }
-        self.webhook_id = None;
-        self.save(app)
+        let previous = self.webhook_id.take();
+        if let Err(error) = self.save(app) {
+            self.webhook_id = previous;
+            return Err(error);
+        }
+        Ok(())
     }
 }
 
@@ -286,6 +391,33 @@ mod tests {
         assert!(result.is_err());
         let absent = parse_saved_map::<String>(None, "sensor_identity_map").unwrap();
         assert!(absent.is_empty());
+    }
+
+    #[test]
+    fn settings_file_replace_preserves_old_data_when_replace_fails() {
+        let folder =
+            std::env::temp_dir().join(format!("ha-settings-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&folder).unwrap();
+        let path = folder.join("settings.json");
+        write_settings_document(&path, vec![("device_id".into(), serde_json::json!("old"))])
+            .unwrap();
+        write_settings_document(&path, vec![("device_id".into(), serde_json::json!("new"))])
+            .unwrap();
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["device_id"], "new");
+        assert!(verify_settings_document(&path).unwrap());
+
+        fs::write(&path, b"{corrupted").unwrap();
+        assert!(verify_settings_document(&path).is_err());
+
+        let directory_target = folder.join("cannot-replace-directory");
+        fs::create_dir(&directory_target).unwrap();
+        assert!(write_settings_document(&directory_target, vec![]).is_err());
+        assert!(directory_target.is_dir());
+        assert_eq!(fs::read_dir(&folder).unwrap().count(), 2);
+        fs::remove_file(&path).unwrap();
+        fs::remove_dir(&directory_target).unwrap();
+        fs::remove_dir(&folder).unwrap();
     }
 
     #[test]
