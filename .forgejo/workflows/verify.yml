@@ -20,7 +20,7 @@ jobs:
           cache: yarn
           cache-dependency-path: desktop-app/yarn.lock
       - run: corepack enable
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: https://github.com/dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - name: Install Linux desktop libraries
