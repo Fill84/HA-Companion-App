@@ -33,6 +33,7 @@ async function refreshSettingsVersions(settings) {
  */
 async function openSettings() {
     settingsFocusReturn = document.activeElement;
+    document.getElementById("settings-save").disabled = false;
     try {
         currentSettings = await window.__TAURI__.core.invoke("get_settings");
         pendingSensorPreferences = { ...(currentSettings.enabled_sensors || {}) };
@@ -73,6 +74,13 @@ async function openSettings() {
         void refreshSettingsVersions(currentSettings);
     } catch (err) {
         console.error("Failed to load settings:", err);
+        document.getElementById("settings-save").disabled = true;
+        const statusEl = document.getElementById("settings-reconnect-status");
+        statusEl.classList.remove("hidden", "status-ok");
+        statusEl.classList.add("status-error");
+        statusEl.textContent = t("settings_load_failed");
+        document.getElementById("settings-overlay").classList.remove("hidden");
+        document.getElementById("settings-close").focus?.();
     }
 }
 
@@ -81,16 +89,23 @@ async function openSettings() {
  */
 async function closeSettings() {
     if (document.getElementById("settings-overlay").classList.contains("hidden")) return;
+    // Settings can also be opened from setup, where no dashboard exists yet.
+    if (document.getElementById("setup-screen").classList.contains("hidden")) {
+        try {
+            await window.__TAURI__.core.invoke("load_dashboard");
+        } catch (err) {
+            console.error("Failed to restore dashboard:", err);
+            const statusEl = document.getElementById("settings-reconnect-status");
+            statusEl.classList.remove("hidden", "status-ok");
+            statusEl.classList.add("status-error");
+            statusEl.textContent = t("dashboard_load_failed");
+            return;
+        }
+    }
     versionRequestId++;
     document.getElementById("settings-overlay").classList.add("hidden");
     settingsFocusReturn?.focus?.();
     settingsFocusReturn = null;
-    // Re-open the HA child webview on top
-    try {
-        await window.__TAURI__.core.invoke("load_dashboard");
-    } catch (err) {
-        console.error("Failed to restore dashboard:", err);
-    }
 }
 
 /**
@@ -143,6 +158,7 @@ async function populateSensorList() {
     try {
         const sensors = await window.__TAURI__.core.invoke("get_sensor_list");
         const container = document.getElementById("sensor-list");
+        container.removeAttribute("role");
         container.innerHTML = "";
 
         for (const sensor of sensors) {
@@ -175,6 +191,9 @@ async function populateSensorList() {
         }
     } catch (err) {
         console.error("Failed to load sensor list:", err);
+        const container = document.getElementById("sensor-list");
+        container.textContent = t("sensor_list_failed");
+        container.setAttribute("role", "alert");
     }
 }
 

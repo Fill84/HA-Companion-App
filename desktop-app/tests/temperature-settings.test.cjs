@@ -13,6 +13,8 @@ function screen(settings) {
             if (!elements.has(id)) {
                 const classes = new Set();
                 elements.set(id, { value: '', checked: false,
+                    setAttribute(name, value) { this[name] = value; },
+                    removeAttribute(name) { delete this[name]; },
                     classList: {
                         add: (...names) => names.forEach(name => classes.add(name)),
                         remove: (...names) => names.forEach(name => classes.delete(name)),
@@ -67,4 +69,25 @@ test('Older integrations without version metadata show unknown', async () => {
     await ui.context.openSettings();
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(ui.document.getElementById('settings-integration-version').textContent, 'version_unknown');
+});
+
+test('Settings shows a recoverable error when backend settings cannot load', async () => {
+    const ui = screen({});
+    ui.context.window.__TAURI__.core.invoke = async () => { throw new Error('backend failure'); };
+    await ui.context.openSettings();
+    assert.equal(ui.document.getElementById('settings-overlay').classList.contains('hidden'), false);
+    assert.equal(ui.document.getElementById('settings-save').disabled, true);
+    assert.equal(ui.document.getElementById('settings-reconnect-status').textContent, 'settings_load_failed');
+});
+
+test('Dashboard failure keeps Settings open with an error', async () => {
+    const ui = screen({ is_registered: true });
+    await ui.context.openSettings();
+    ui.document.getElementById('setup-screen').classList.add('hidden');
+    ui.context.window.__TAURI__.core.invoke = async name => {
+        if (name === 'load_dashboard') throw new Error('webview failure');
+    };
+    await ui.context.closeSettings();
+    assert.equal(ui.document.getElementById('settings-overlay').classList.contains('hidden'), false);
+    assert.equal(ui.document.getElementById('settings-reconnect-status').textContent, 'dashboard_load_failed');
 });

@@ -20,6 +20,7 @@ function screen() {
             addEventListener(name, fn) { this.listeners[name] = fn; },
             appendChild(child) { this.children.push(child); },
             setAttribute(name, value) { this[name] = value; },
+            removeAttribute(name) { delete this[name]; },
             set innerHTML(_value) { this.children = []; },
         };
     }
