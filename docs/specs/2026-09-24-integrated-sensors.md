@@ -28,7 +28,7 @@ De bestaande HA-unique-ID `cpu_temperature` en andere reeds toegewezen entity-ID
 2. Gecontroleerde officiële driver-/module-artefacten met vastgelegde versie, SHA-256, handtekening en licentie/broncodeaanbod; een reproduceerbare installerbuild bevat ze.
 3. Schone install, update, reboot, normaal gebruikersaccount, ontbrekende rechten, driverfout, slaap/herstel en uninstall getest op twee Windows-computers. Geen ongewenste driververwijdering.
 4. Een echte CPU-packagewaarde op ondersteunde Intel- en AMD-hosts met onafhankelijke referentiemeting; niet-ondersteunde hardware blijft `unknown`.
-5. Linux- en macOS-build en echte sensorproef op beschikbare hosts; per type vastgelegde dekking en ontbrekende OS-API's, zonder universele dekkingsclaim.
+5. Linux- en macOS-implementatie, buildconfiguratie en geautomatiseerde controles blijven vereist; per type worden dekking en ontbrekende OS-API's vastgelegd, zonder universele dekkingsclaim. De echte sensorproeven op die twee OS'en zijn op verzoek uitgesteld en blijven zichtbaar als open verificatiepunt.
 6. CPU-/geheugen-/I/O-impact gemeten; behoud van HA-ID's en automatiseringen bij migratie en wegvallende bronnen getest.
 
 ## Gecontroleerde bronnen

@@ -32,4 +32,4 @@ Migratiebesluit van de gebruiker: bestaande Home Assistant-entity-ID's en automa
 
 ## Releasepoort
 
-Geen claim van volledige afronding zonder: alle 54 IDs met bewijs en status; schone Windows/macOS/Linux-builds voor geclaimde architecturen; geslaagde desktop-, HA- en protocoltests; upgrade- en uninstallerproef; echte HA-test; expliciet gedocumenteerde sensorbeschikbaarheid per platform. Hardware of OS dat niet beschikbaar is voor test blijft een open verificatiepunt, geen impliciete pass.
+Geen claim van volledige afronding zonder: alle 54 IDs met bewijs en status; geslaagde desktop-, HA- en protocoltests; upgrade- en uninstallerproef; echte HA-test; expliciet gedocumenteerde sensorbeschikbaarheid per platform. Windows, macOS en Linux blijven implementatieplatformen. De gebruiker heeft alleen de uitvoering van macOS- en Linux-runtimeproeven in deze ronde uitgesteld; hun code, buildconfiguratie, documentatie en geautomatiseerde platformcontroles mogen niet worden geschrapt. Een niet uitgevoerde fysieke platformproef blijft in de verificatiematrix open en wordt niet als geslaagd gerapporteerd.
