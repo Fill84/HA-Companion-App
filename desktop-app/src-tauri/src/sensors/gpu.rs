@@ -337,11 +337,7 @@ fn collect_macos() -> Option<Vec<GpuInfo>> {
         let vram = display
             .get("sppci_vram")
             .and_then(|v| v.as_str())
-            .and_then(|s| {
-                s.split_whitespace()
-                    .next()
-                    .and_then(|n| n.parse::<u64>().ok())
-            });
+            .and_then(parse_displayed_vram_mb);
 
         gpus.push(GpuInfo {
             physical_id: None,
@@ -349,7 +345,7 @@ fn collect_macos() -> Option<Vec<GpuInfo>> {
             vendor,
             usage_percent: None,
             temperature: None,
-            vram_total_mb: vram.map(|v| v * 1000), // Decimal GB to MB
+            vram_total_mb: vram,
             vram_used_mb: None,
             driver_version: None,
         });
@@ -359,5 +355,37 @@ fn collect_macos() -> Option<Vec<GpuInfo>> {
         None
     } else {
         Some(gpus)
+    }
+}
+
+#[cfg(any(test, target_os = "macos"))]
+fn parse_displayed_vram_mb(text: &str) -> Option<u64> {
+    let mut fields = text.split_whitespace();
+    let amount: f64 = fields.next()?.parse().ok()?;
+    let multiplier = match fields.next()?.to_ascii_lowercase().as_str() {
+        "mb" => 1.0,
+        "gb" => 1000.0,
+        "mib" => 1.048_576,
+        "gib" => 1_073.741_824,
+        _ => return None,
+    };
+    let result = amount * multiplier;
+    if !result.is_finite() || result <= 0.0 || result > u64::MAX as f64 {
+        return None;
+    }
+    Some(result.round() as u64)
+}
+
+#[cfg(test)]
+mod vram_tests {
+    use super::parse_displayed_vram_mb;
+
+    #[test]
+    fn respects_displayed_vram_unit() {
+        assert_eq!(parse_displayed_vram_mb("8 GB"), Some(8000));
+        assert_eq!(parse_displayed_vram_mb("1536 MB"), Some(1536));
+        assert_eq!(parse_displayed_vram_mb("1.5 GiB"), Some(1611));
+        assert_eq!(parse_displayed_vram_mb("unknown"), None);
+        assert_eq!(parse_displayed_vram_mb("8 TB"), None);
     }
 }
