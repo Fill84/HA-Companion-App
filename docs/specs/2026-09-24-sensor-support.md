@@ -1,13 +1,13 @@
 # Sensorbronnen en platformcontract
 
-> De Windows-providerkeuze in dit document is vervangen door de [geïntegreerde sensoreis](2026-09-24-integrated-sensors.md). De tabel hieronder beschrijft de bestaande, nog niet vervangen implementatie en het oorspronkelijke bronnenonderzoek.
+> De oorspronkelijke Windows-providerkeuze is vervangen door de [geïntegreerde sensoreis](2026-09-24-integrated-sensors.md). De bronnenvergelijking hieronder is historisch; de verificatiematrix noemt de actuele code en open proeven.
 
 Onderzocht op 24 september 2026 voor de [projectherstelspecificatie](2026-09-24-project-recovery.md). **Conclusie:** er is geen aangetoonde, lichte, universele API die *alle* fysieke sensoren op *alle* hardware en Windows, macOS en Linux als één betrouwbare call ontsluit. Een call naar onze eigen collector kan wel één snapshot retourneren, maar die collector moet intern OS- en vendorproviders gebruiken. Een enkele IPC-call vermindert communicatieoverhead; hij maakt sensor-I/O niet gratis. Dit is een gevolgtrekking uit de uiteenlopende bron-API's hieronder, geen claim dat ieder toekomstig product is uitgesloten.
 
 | Bron | Platform en bereik | Grenzen en keuze |
 |---|---|---|
 | [sysinfo](https://github.com/GuillaumeGomez/sysinfo) | OS-brede CPU, geheugen, schijven, netwerk, processen; componenttemperaturen waar het OS ze publiceert | Hergebruik handles en ververs gericht. Componentlabels bewijzen op zichzelf geen CPU-package-meting. Basisprovider. |
-| [LibreHardwareMonitorLib](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) | Windows: CPU, moederbord, GPU, schijven en netwerk waar hardwareondersteuning bestaat | De projectdocumentatie noemt .NET 10, maar waarschuwt zelf dat moederborden verschillen. Diepere metingen kunnen een aparte, geïnstalleerde [PawnIO](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/master/LibreHardwareMonitor.Windows.Forms/UI/MainForm.cs)-driver gebruiken. Alleen opt-in; nooit een verplichte of automatisch geïnstalleerde driver. De huidige helper leest uitsluitend CPU-temperatuur en is dus geen volledige inventaris. |
+| [PawnIO](https://github.com/namazso/PawnIO) met eigen Rust-service | Windows: gecontroleerde, optionele kerneltoegang; momenteel alleen Intel CPU-package via de officiële IntelMSR-module | De app bouwt en bundelt de eigen service en de gesigneerde driver; fysieke installatietest ontbreekt. De eerder onderzochte LibreHardwareMonitorLib/.NET-helper is uit de actuele build verwijderd. Een driver alleen levert niet automatisch alle hardwaremetingen. |
 | [Linux hwmon/sysfs](https://docs.kernel.org/hwmon/sysfs-interface.html) | Linux: temperaturen, ventilatoren, spanning enz. mits een kernel-driver ze publiceert | Ontdek `/sys/class/hwmon` en identificeer chip/channel; labels, schaal en stabiliteit volgen kernel-ABI. Geen garantie voor elk apparaat. |
 | [NVIDIA NVML](https://developer.nvidia.com/management-library-nvml) | NVIDIA GPU: thermiek, belasting, geheugen, ventilator waar ondersteund | Vendor-API; ontbrekende features zijn normaal. Bestaande projectprovider behouden en benchmarken. |
 | [Apple device sensor-overzicht](https://developer.apple.com/documentation/technologyoverviews/device-sensors) en [MetricKit](https://developer.apple.com/documentation/MetricKit) | macOS: uiteenlopende, deels geautoriseerde API's; MetricKit levert vooral appdiagnostiek over een tijdvenster | Niet gelijk aan een publieke universele CPU-/moederbordtelemetrie-API. Native OS-metingen alleen tonen als herkomst en betekenis zijn gevalideerd. |
@@ -24,8 +24,8 @@ Het contract voor deze release is **read-only monitoring**. Het wijzigen van fan
 
 | Host | Basisstatistiek | CPU-thermiek | GPU | Moederbord/fan | Status |
 |---|---|---|---|---|---|
-| Windows x64/arm64 | `sysinfo` | optionele LHM/PawnIO-provider indien geschikt | NVML of WMI | niet in de huidige helper | x64 gebouwd; op `phill-pc` en `beast-unit` antwoordt de helper zonder PawnIO correct `driver_missing`. ARM64 en echte temperatuurmeting blijven open. |
-| Linux x64/arm64 | `sysinfo` | herkende hwmon-componenten indien driver/label valide | NVML of beperkte OS-bronnen | geen volledige moederbord-/fanprovider | Build en fysieke proef open. |
+| Windows x64/arm64 | `sysinfo` | eigen optionele PawnIO-service voor Intel x64; AMD/ARM64 nog `unknown` | NVML of WMI | geen generieke moederbord-/fanprovider | x64 NSIS gebouwd met gesigneerde driver en eigen service; installatie en echte meting op `phill-pc` en `beast-unit` blijven open. |
+| Linux x64/arm64 | `sysinfo` | herkende hwmon-componenten indien driver/label valide | NVML of beperkte OS-bronnen | geen volledige moederbord-/fanprovider | `render-unit` publiceert via `coretemp` een `Package id 0`-kanaal; app-build en runtimeproef ontbreken. |
 | macOS Intel/Apple Silicon | `sysinfo`/native | uitsluitend gevalideerde OS-component | native/vendor waar beschikbaar | geen algemene garantie | Build en fysieke proef open. |
 
 Per rij zijn nog nodig: koude en warme sampletijden, CPU-verbruik, geheugengebruik, gedrag bij verwijderde hardware, ontbrekende rechten, slaap/herstart en langdurige stabiliteit. Tot die metingen is er geen onderbouwde impactclaim of universele dekkingsclaim.

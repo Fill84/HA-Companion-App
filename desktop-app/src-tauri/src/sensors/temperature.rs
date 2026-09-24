@@ -78,7 +78,8 @@ impl TemperatureReader {
             let label = component.label();
             if !(label.starts_with("coretemp Package id ")
                 || label == "k10temp Tdie"
-                || label == "CPU Die")
+                || label == "CPU Die"
+                || label == "PECI CPU")
             {
                 continue;
             }
