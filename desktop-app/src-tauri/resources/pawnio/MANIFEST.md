@@ -1,6 +1,6 @@
 # PawnIO artefacten voor de geïntegreerde Windows-sensorroute
 
-Status: opgenomen in een lokale Windows-NSIS-build; nog **niet** op een host geïnstalleerd of met echte metingen gevalideerd. De provider is geen releasekandidaat totdat installatie, privilegegrens en hostproeven slagen.
+Status: de meegeleverde driver en onze Rust-sensorservice zijn op `phill-pc` en `beast-unit` (Windows x64, Intel) geïnstalleerd en hebben echte CPU-temperatuurmetingen opgeleverd. Alleen op `phill-pc` is de volledige route tot Home Assistant en de kaart bevestigd. Een nieuwe publieke release vereist nog de actuele installer-/upgradeproef, langdurige stabiliteitsproef en de overige platform- en hardwarecontroles uit de verificatiestatus.
 
 De x64- en ARM64-driverpakketten zijn zonder uitvoering uit de officiële [PawnIO.Setup 2.2.0-release](https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0) gehaald. SHA-256 van `PawnIO_setup.exe`: `1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032`. De Windows Authenticode-status van het setupbestand en beide catalogi was `Valid`; de catalogi zijn ondertekend door `Microsoft Windows Hardware Compatibility Publisher`. Alleen de ondertekende x64- en ARM64-blokken uit het CAB-archief zijn opgenomen, zonder de `unrestricted`-blokken. Controle bij build en installatie blijft vereist.
 

@@ -1,6 +1,6 @@
 [package]
 name = "ha-companion"
-version = "1.0.4"
+version = "1.0.5"
 description = "Home Assistant Desktop Companion App"
 authors = ["HA Companion"]
 edition = "2021"
