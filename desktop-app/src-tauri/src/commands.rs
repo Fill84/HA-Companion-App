@@ -29,7 +29,7 @@ pub struct SettingsResponse {
 pub async fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsResponse, String> {
     ensure_settings_loaded(&state)?;
     let settings = state.settings.lock().await;
-    let is_registered = *state.is_registered.lock().await;
+    let is_registered = settings.webhook_id.is_some();
 
     Ok(SettingsResponse {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -192,7 +192,6 @@ pub async fn save_settings(
         if url_changed || token_changed {
             ha_client.update_config(server_url, access_token);
             ha_client.clear_webhook_id();
-            *state.is_registered.lock().await = false;
         }
     }
 
@@ -205,7 +204,7 @@ pub async fn save_settings(
 }
 
 async fn sync_all_sensors(state: Arc<AppState>, app: &tauri::AppHandle) -> Result<(), String> {
-    if !*state.is_registered.lock().await {
+    if state.settings.lock().await.webhook_id.is_none() {
         return Ok(());
     }
     let sensors = crate::collect_snapshot(state.clone(), true).await?;
@@ -320,8 +319,6 @@ pub(crate) async fn register_device_inner(
         }
     };
 
-    *state.is_registered.lock().await = true;
-
     Ok(())
 }
 
@@ -340,7 +337,7 @@ pub async fn update_sensors_now(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let is_registered = *state.is_registered.lock().await;
+    let is_registered = state.settings.lock().await.webhook_id.is_some();
     if !is_registered {
         log::error!("[HA] update_sensors_now: device not registered");
         return Err("Device not registered".to_string());
@@ -387,8 +384,6 @@ pub async fn reregister_device(
         ha_client.update_config(server_url, access_token);
         ha_client.clear_webhook_id();
     }
-    *state.is_registered.lock().await = false;
-
     register_device_inner(&state, &app).await
 }
 
@@ -529,7 +524,6 @@ pub async fn mark_unregistered(
     }
     drop(settings);
     state.ha_client.lock().await.clear_webhook_id();
-    *state.is_registered.lock().await = false;
     let _ = app.emit("registration-lost", reason.to_string());
 }
 

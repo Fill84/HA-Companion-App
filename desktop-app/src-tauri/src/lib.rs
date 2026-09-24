@@ -29,7 +29,6 @@ pub struct AppState {
     pub settings: Mutex<AppSettings>,
     pub ha_client: Mutex<HaClient>,
     pub collector: Mutex<SensorCollector>,
-    pub is_registered: Mutex<bool>,
     pub registration_lock: Mutex<()>,
     pub shutting_down: AtomicBool,
 }
@@ -173,7 +172,6 @@ pub fn run(dev_mode: bool) {
                 settings: Mutex::new(app_settings.clone()),
                 ha_client: Mutex::new(ha_client),
                 collector: Mutex::new(collector),
-                is_registered: Mutex::new(app_settings.webhook_id.is_some()),
                 registration_lock: Mutex::new(()),
                 shutting_down: AtomicBool::new(false),
             });
@@ -375,7 +373,7 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
     // Wait a bit for app to initialize
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
-    if *state.is_registered.lock().await {
+    if state.settings.lock().await.webhook_id.is_some() {
         refresh_device_metadata(&state).await;
     }
 
@@ -391,7 +389,7 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
             settings.update_interval
         };
 
-        let is_registered = *state.is_registered.lock().await;
+        let is_registered = state.settings.lock().await.webhook_id.is_some();
 
         if is_registered {
             if cycle_count.is_multiple_of(10) {
@@ -478,7 +476,7 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                     if state.shutting_down.load(Ordering::SeqCst) {
                         break;
                     }
-                    if !*state.is_registered.lock().await {
+                    if state.settings.lock().await.webhook_id.is_none() {
                         match crate::commands::register_device_inner(&state, &handle).await {
                             Ok(()) => {
                                 log::info!("Background registration recovered");
