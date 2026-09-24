@@ -9,6 +9,7 @@ pub struct Temperature {
 }
 
 impl Temperature {
+    #[cfg(windows)]
     pub fn unavailable(status: &str) -> Self {
         Self {
             value: None,

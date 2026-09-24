@@ -17,6 +17,28 @@ jobs:
       - name: Install Rust toolchain
         shell: pwsh
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - name: Configure Microsoft C++ tools
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere)) { throw 'Install Microsoft C++ Build Tools with Desktop development with C++ on this runner.' }
+          $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $installation) { throw 'No Visual C++ x64 toolchain was found on this runner.' }
+          $vcvars = Join-Path $installation 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path -LiteralPath $vcvars)) { throw 'The Visual C++ x64 environment script is missing.' }
+          $env:PATH = "$(Split-Path -Parent $vswhere);$env:PATH"
+          $variables = & cmd.exe /d /s /c ('call "' + $vcvars + '" >nul && set')
+          if ($LASTEXITCODE -ne 0) { throw 'Visual C++ environment setup failed.' }
+          $names = @('PATH', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VCToolsInstallDir', 'WindowsSdkDir', 'WindowsSDKVersion', 'UniversalCRTSdkDir', 'UCRTVersion')
+          foreach ($name in $names) {
+            $line = $variables | Where-Object { $_ -like "$name=*" } | Select-Object -First 1
+            if ($line) {
+              $value = $line.Substring($line.IndexOf('=') + 1)
+              Set-Item -Path "Env:$name" -Value $value
+              Add-Content -LiteralPath $env:FORGEJO_ENV -Value "$name=$value"
+            }
+          }
+          if (-not (Get-Command link.exe -ErrorAction SilentlyContinue)) { throw 'Visual C++ linker link.exe is not available after vcvars64.bat.' }
       - run: corepack enable
         shell: pwsh
       - name: Install web dependencies
