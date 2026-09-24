@@ -114,8 +114,11 @@ fn matching_device() -> Result<Option<(DeviceSet, SP_DEVINFO_DATA)>> {
             return Err(error).context("reading installed device hardware IDs");
         }
         let ids: Vec<u16> = data
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .copied()
+            .map(u16::from_le_bytes)
             .collect();
         if String::from_utf16_lossy(&ids)
             .split('\0')
