@@ -96,7 +96,7 @@ pub async fn register_device(
                     let err_str = e.to_string();
                     // 410 from HA means webhook is known but config entry missing;
                     // this won't resolve by waiting longer.
-                    if err_str.contains("410") {
+                    if crate::webhook_http_status(&err_str) == Some(410) {
                         log::error!(
                             "[HA] Initial sensor registration returned 410 — config entry missing"
                         );

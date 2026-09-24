@@ -167,7 +167,7 @@ async fn sync_all_sensors(state: Arc<AppState>, app: &tauri::AppHandle) -> Resul
         let reason = error.to_string();
         let failed_webhook = client.webhook_id().unwrap_or_default().to_owned();
         drop(client);
-        if reason.contains("404") || reason.contains("410") {
+        if crate::is_webhook_dead(&reason) {
             mark_unregistered(&state, app, &failed_webhook, &reason).await;
         }
         return Err(format!(
@@ -277,7 +277,7 @@ pub async fn update_sensors_now(
         log::error!("[HA] Update sensors failed: {}", err_str);
         let failed_webhook = ha_client.webhook_id().unwrap_or_default().to_owned();
         drop(ha_client);
-        if err_str.contains("404") || err_str.contains("410") {
+        if crate::is_webhook_dead(&err_str) {
             mark_unregistered(&state, &app, &failed_webhook, &err_str).await;
         }
         return Err(format!("Update failed: {}", err_str));
@@ -367,7 +367,7 @@ pub async fn check_connection(
         Ok(()) => Ok(ConnectionStatus::Ok),
         Err(error) => {
             let reason = error.to_string();
-            if reason.contains("HTTP 404") || reason.contains("HTTP 410") {
+            if crate::is_webhook_dead(&reason) {
                 let failed_webhook = ha_client.webhook_id().unwrap_or_default().to_owned();
                 drop(ha_client);
                 mark_unregistered(

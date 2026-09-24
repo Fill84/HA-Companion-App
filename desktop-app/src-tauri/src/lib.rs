@@ -309,8 +309,14 @@ pub fn run(dev_mode: bool) {
 /// 404 = webhook handler is gone (integration removed/restarted, storage wiped).
 /// 410 = webhook handler exists in HA but our config entry is missing.
 /// In both cases the local webhook_id is dead and we must re-register.
-fn is_webhook_dead(err: &str) -> bool {
-    err.contains("404") || err.contains("410")
+pub(crate) fn is_webhook_dead(err: &str) -> bool {
+    matches!(webhook_http_status(err), Some(404 | 410))
+}
+
+pub(crate) fn webhook_http_status(err: &str) -> Option<u16> {
+    err.split_once("returned HTTP ")
+        .and_then(|(_, status)| status.split_whitespace().next())
+        .and_then(|status| status.parse().ok())
 }
 
 /// Background task that periodically updates sensors
@@ -439,5 +445,25 @@ async fn refresh_device_metadata(state: &AppState) {
         .await
     {
         log::warn!("Could not refresh device metadata: {error}");
+    }
+}
+
+#[cfg(test)]
+mod webhook_status_tests {
+    use super::is_webhook_dead;
+
+    #[test]
+    fn only_explicit_missing_webhook_responses_clear_registration() {
+        assert!(is_webhook_dead(
+            "register_sensor returned HTTP 404 Not Found"
+        ));
+        assert!(is_webhook_dead(
+            "update_sensor_states returned HTTP 410 Gone"
+        ));
+        assert!(!is_webhook_dead("Webhook connection failed on port 4040"));
+        assert!(!is_webhook_dead("register_sensor returned HTTP 4040"));
+        assert!(!is_webhook_dead(
+            "update_sensor_states returned HTTP 500 Internal Server Error"
+        ));
     }
 }
