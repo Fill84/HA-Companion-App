@@ -64,6 +64,9 @@ jobs:
         working-directory: desktop-app
         shell: pwsh
         run: node --test (Get-ChildItem -LiteralPath tests -Filter '*.cjs' -File | ForEach-Object FullName)
+      - name: Build bundled Windows sensor service
+        shell: pwsh
+        run: node desktop-app/build-sensors.js
       - name: Check Rust formatting
         working-directory: desktop-app/src-tauri
         shell: pwsh

@@ -102,7 +102,9 @@ jobs:
           cd desktop-app
           yarn install --frozen-lockfile
           yarn audit --level moderate
-          node --test tests/*.cjs
+          node build-web.js
+          node --test (Get-ChildItem -LiteralPath tests -Filter '*.cjs' -File | ForEach-Object FullName)
+          node build-sensors.js
           cd src-tauri
           cargo fmt --all -- --check
           cargo clippy --locked --all-targets -- -D warnings
