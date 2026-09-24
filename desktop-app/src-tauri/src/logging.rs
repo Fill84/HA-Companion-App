@@ -1,7 +1,6 @@
 //! Release-mode file logger.
 //!
-//! Writes to `%APPDATA%\com.ha-companion.desktop\app.log` on Windows.
-//! Falls back to `<cwd>/app.log` if `APPDATA` isn't set (CI / Linux dev).
+//! Writes below the OS-specific user log or state directory.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -138,21 +137,13 @@ mod tests {
     }
 
     #[test]
-    fn log_file_path_under_appdata_uses_app_identifier() {
-        let prev = std::env::var("APPDATA").ok();
-        std::env::set_var("APPDATA", r"C:\Users\test\AppData\Roaming");
-
+    fn log_file_path_uses_app_identifier() {
         let path = log_file_path().expect("must compute path");
         assert!(
-            path.ends_with(r"com.ha-companion.desktop\app.log"),
+            path.ends_with(Path::new(APP_DATA_DIR).join(LOG_FILE_NAME)),
             "unexpected path: {:?}",
             path
         );
-
-        match prev {
-            Some(v) => std::env::set_var("APPDATA", v),
-            None => std::env::remove_var("APPDATA"),
-        }
     }
 
     #[test]
