@@ -34,6 +34,16 @@ fn token_for_server(raw: &str, server_url: &str) -> Option<String> {
         .then_some(stored.access_token)
 }
 
+fn update_interval_from_store(value: Option<serde_json::Value>) -> Result<u64, String> {
+    match value {
+        None => Ok(60),
+        Some(value) => value
+            .as_u64()
+            .filter(|seconds| (5..=3600).contains(seconds))
+            .ok_or_else(|| "Invalid update_interval in saved settings".to_string()),
+    }
+}
+
 fn persist_entries(
     app: &AppHandle,
     entries: Vec<(String, serde_json::Value)>,
@@ -248,10 +258,7 @@ impl AppSettings {
             }
         }
 
-        let update_interval = store
-            .get("update_interval")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(60);
+        let update_interval = update_interval_from_store(store.get("update_interval"))?;
 
         let language = store
             .get("language")
@@ -279,6 +286,9 @@ impl AppSettings {
 
     /// Save settings to the Tauri store
     pub fn save(&self, app: &AppHandle) -> Result<(), String> {
+        if !(5..=3600).contains(&self.update_interval) {
+            return Err("Update interval must be 5..3600 seconds".into());
+        }
         let store = app
             .store_builder(STORE_PATH)
             .disable_auto_save()
@@ -396,6 +406,26 @@ mod tests {
         assert!(result.is_err());
         let absent = parse_saved_map::<String>(None, "sensor_identity_map").unwrap();
         assert!(absent.is_empty());
+    }
+
+    #[test]
+    fn saved_update_interval_cannot_create_a_busy_loop() {
+        assert_eq!(update_interval_from_store(None).unwrap(), 60);
+        for invalid in [
+            serde_json::json!(0),
+            serde_json::json!(3601),
+            serde_json::json!("5"),
+        ] {
+            assert!(update_interval_from_store(Some(invalid)).is_err());
+        }
+        assert_eq!(
+            update_interval_from_store(Some(serde_json::json!(5))).unwrap(),
+            5
+        );
+        assert_eq!(
+            update_interval_from_store(Some(serde_json::json!(3600))).unwrap(),
+            3600
+        );
     }
 
     #[test]
