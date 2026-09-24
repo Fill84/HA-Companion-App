@@ -1,3 +1,10 @@
+param(
+    [ValidateRange(30, 600)]
+    [int]$BlockSeconds = 75,
+    [ValidateRange(30, 300)]
+    [int]$RecoverySeconds = 75
+)
+
 $ErrorActionPreference = 'Stop'
 
 $name = 'HACompanionAuditTemporaryHAOutage'
@@ -27,7 +34,7 @@ try {
     Get-Process ha-companion -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-InteractiveApp
     Write-Output 'OUTAGE_ACTIVE'
-    Start-Sleep -Seconds 75
+    Start-Sleep -Seconds $BlockSeconds
     $sameSettings = (Get-FileHash -LiteralPath $settings -Algorithm SHA256).Hash -eq $settingsHash
     $recentLog = Get-Content -LiteralPath (Join-Path $env:APPDATA 'com.ha-companion.desktop\app.log') -Tail 40
     $transportError = [bool]($recentLog | Select-String 'Webhook connection failed|Webhook request timed out|Ping failed')
@@ -37,7 +44,7 @@ try {
     Write-Output 'OUTAGE_REMOVED'
 }
 
-Start-Sleep -Seconds 75
+Start-Sleep -Seconds $RecoverySeconds
 [pscustomobject]@{
     SettingsPreserved=((Get-FileHash -LiteralPath $settings -Algorithm SHA256).Hash -eq $settingsHash)
     AppRunning=([bool](Get-Process ha-companion -ErrorAction SilentlyContinue))
