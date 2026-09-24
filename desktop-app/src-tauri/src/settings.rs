@@ -40,6 +40,8 @@ pub struct AppSettings {
     pub update_interval: u64,
     pub language: String,
     pub enabled_sensors: HashMap<String, bool>,
+    #[serde(default)]
+    pub sensor_identity_map: HashMap<String, String>,
     pub autostart: bool,
     #[serde(default)]
     pub cpu_temperature_provider: bool,
@@ -55,6 +57,7 @@ impl Default for AppSettings {
             update_interval: 60,
             language: "en".to_string(),
             enabled_sensors: HashMap::new(),
+            sensor_identity_map: HashMap::new(),
             autostart: false,
             cpu_temperature_provider: false,
         }
@@ -62,6 +65,21 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
+    pub fn save_identity_map(
+        &mut self,
+        app: &AppHandle,
+        identity_map: HashMap<String, String>,
+    ) -> Result<(), String> {
+        let store = app.store(STORE_PATH).map_err(|error| error.to_string())?;
+        store.set(
+            "sensor_identity_map",
+            serde_json::to_value(&identity_map).map_err(|error| error.to_string())?,
+        );
+        store.save().map_err(|error| error.to_string())?;
+        self.sensor_identity_map = identity_map;
+        Ok(())
+    }
+
     /// Load settings from the Tauri store
     pub fn load(app: &AppHandle) -> Self {
         let store = match app.store(STORE_PATH) {
@@ -130,6 +148,10 @@ impl AppSettings {
             .get("enabled_sensors")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
+        let sensor_identity_map: HashMap<String, String> = store
+            .get("sensor_identity_map")
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+            .unwrap_or_default();
 
         let autostart = store
             .get("autostart")
@@ -148,6 +170,7 @@ impl AppSettings {
             update_interval,
             language,
             enabled_sensors,
+            sensor_identity_map,
             autostart,
             cpu_temperature_provider,
         }
@@ -179,6 +202,10 @@ impl AppSettings {
         store.set(
             "enabled_sensors",
             serde_json::to_value(&self.enabled_sensors).unwrap_or_default(),
+        );
+        store.set(
+            "sensor_identity_map",
+            serde_json::to_value(&self.sensor_identity_map).unwrap_or_default(),
         );
         store.set("autostart", serde_json::json!(self.autostart));
         store.set(

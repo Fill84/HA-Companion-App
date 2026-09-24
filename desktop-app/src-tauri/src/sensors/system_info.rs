@@ -20,6 +20,7 @@ pub struct SystemInfoData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DisplayInfo {
+    pub physical_id: Option<String>,
     pub name: String,
     pub resolution: String,
     pub refresh_rate_hz: Option<u32>,
@@ -332,7 +333,7 @@ fn collect_displays() -> Vec<DisplayInfo> {
     let mut displays = Vec::new();
 
     if let Ok(results) = wmi_con.raw_query::<HashMap<String, Variant>>(
-        "SELECT Name, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate FROM Win32_VideoController",
+        "SELECT Name, PNPDeviceID, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate FROM Win32_VideoController",
     ) {
         for (i, result) in results.iter().enumerate() {
             let name = result
@@ -358,6 +359,7 @@ fn collect_displays() -> Vec<DisplayInfo> {
 
             if let (Some(h), Some(v)) = (h_res, v_res) {
                 displays.push(DisplayInfo {
+                    physical_id: result.get("PNPDeviceID").and_then(variant_to_string),
                     name,
                     resolution: format!("{}x{}", h, v),
                     refresh_rate_hz: refresh,

@@ -7,6 +7,7 @@ pub struct BatteryData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatteryInfo {
+    pub physical_id: Option<String>,
     pub percentage: f32,
     pub state: String,
     pub state_of_health: Option<f32>,
@@ -40,6 +41,17 @@ fn collect_batteries() -> Vec<BatteryInfo> {
             let is_charging = matches!(battery.state(), battery::State::Charging);
 
             batteries.push(BatteryInfo {
+                physical_id: battery
+                    .serial_number()
+                    .filter(|serial| !serial.is_empty())
+                    .map(|serial| {
+                        serde_json::json!([
+                            battery.vendor().unwrap_or(""),
+                            battery.model().unwrap_or(""),
+                            serial
+                        ])
+                        .to_string()
+                    }),
                 percentage: battery.state_of_charge().value * 100.0,
                 state: state.to_string(),
                 state_of_health: Some(battery.state_of_health().value * 100.0),

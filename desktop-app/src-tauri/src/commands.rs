@@ -219,11 +219,11 @@ pub async fn register_device(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    let all_sensors = crate::collect_snapshot(state.inner().clone(), true).await?;
     let mut settings = state.settings.lock().await;
     let mut ha_client = state.ha_client.lock().await;
-    let mut collector = state.collector.lock().await;
 
-    match crate::registration::register_device(&mut settings, &mut ha_client, &mut collector, &app)
+    match crate::registration::register_device(&mut settings, &mut ha_client, &all_sensors, &app)
         .await
     {
         Ok(_) => (),

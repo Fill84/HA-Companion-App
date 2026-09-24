@@ -14,14 +14,16 @@ Onderzocht op 24 september 2026 voor de [projectherstelspecificatie](2026-09-24-
 
 Elke reading krijgt `stable_source_id`, apparaat-ID, meettype, ruwe numerieke waarde, eenheid, tijdstip, providernaam/-versie, beschikbaarheidsstatus en optioneel foutcode. De collector voert ontdekking apart van periodieke sampling uit, bewaart providerhandles, begrenst individuele calls en retourneert één snapshot naar de app. Normalisatie naar HA gebeurt centraal; `null` of `unavailable` betekent geen echte meting. Dynamic sensors mogen alleen ontstaan uit aantoonbaar herkende apparaten en bekende eenheden. Een provider mag geen identiteiten baseren op volgorde of aantallen.
 
+Dit is het beoogde volledige contract; de huidige implementatie voldoet er nog niet overal aan. Voor GPU's, batterijen en de Windows-videocontroller is een bewaarde koppeling op NVML-UUID, PNP-ID of batterijserienummer toegevoegd. Bij onzekere meervoudige koppeling worden oude index-ID's niet hergebruikt; de oude HA-waarde wordt bij een volledige snapshot `unknown`. Een enkele bron zonder stabiel apparaat-ID gebruikt voorlopig zijn bestaande enkelvoudige ID. Netwerk en schijven vragen nog een gelijkwaardige fysieke identiteit en migratieproef.
+
 Het contract voor deze release is **read-only monitoring**. Het wijzigen van fan curves, voltage of andere hardware-instellingen is geen impliciete bevoegdheid van `sensors beheren`. Dat vereist een afzonderlijke veiligheidsspecificatie, hardware-allowlist en expliciete gebruikerstoestemming.
 
 ## Verificatiematrix
 
 | Host | Basisstatistiek | CPU-thermiek | GPU | Moederbord/fan | Status |
 |---|---|---|---|---|---|
-| Windows x64/arm64 | `sysinfo` | optionele LHM/PawnIO-provider indien geschikt | NVML of leverancier | optionele provider | Alleen Windows-compile en synthetische helpertests uitgevoerd; echte hardwareproef open. |
-| Linux x64/arm64 | `sysinfo` | hwmon indien driver/label valide | NVML of OS-driver | hwmon indien driver | Build en fysieke proef open. |
+| Windows x64/arm64 | `sysinfo` | optionele LHM/PawnIO-provider indien geschikt | NVML of WMI | niet in de huidige helper | x64 gebouwd; op `phill-pc` en `beast-unit` antwoordt de helper zonder PawnIO correct `driver_missing`. ARM64 en echte temperatuurmeting blijven open. |
+| Linux x64/arm64 | `sysinfo` | herkende hwmon-componenten indien driver/label valide | NVML of beperkte OS-bronnen | geen volledige moederbord-/fanprovider | Build en fysieke proef open. |
 | macOS Intel/Apple Silicon | `sysinfo`/native | uitsluitend gevalideerde OS-component | native/vendor waar beschikbaar | geen algemene garantie | Build en fysieke proef open. |
 
 Per rij zijn nog nodig: koude en warme sampletijden, CPU-verbruik, geheugengebruik, gedrag bij verwijderde hardware, ontbrekende rechten, slaap/herstart en langdurige stabiliteit. Tot die metingen is er geen onderbouwde impactclaim of universele dekkingsclaim.

@@ -23,6 +23,7 @@ use settings::AppSettings;
 
 /// Shared application state
 pub struct AppState {
+    pub app_handle: tauri::AppHandle,
     pub settings: Mutex<AppSettings>,
     pub ha_client: Mutex<HaClient>,
     pub collector: Mutex<SensorCollector>,
@@ -34,16 +35,23 @@ pub async fn collect_snapshot(
     state: Arc<AppState>,
     full: bool,
 ) -> Result<Vec<SensorValue>, String> {
-    tokio::task::spawn_blocking(move || {
-        let mut collector = state.collector.blocking_lock();
-        if full {
+    let worker_state = state.clone();
+    let (sensors, identities) = tokio::task::spawn_blocking(move || {
+        let mut collector = worker_state.collector.blocking_lock();
+        let sensors = if full {
             collector.collect_all()
         } else {
             collector.collect_dynamic()
-        }
+        };
+        (sensors, collector.identity_map())
     })
     .await
-    .map_err(|error| format!("Sensor collection worker failed: {error}"))
+    .map_err(|error| format!("Sensor collection worker failed: {error}"))?;
+    let mut settings = state.settings.lock().await;
+    if settings.sensor_identity_map != identities {
+        settings.save_identity_map(&state.app_handle, identities)?;
+    }
+    Ok(sensors)
 }
 
 pub fn run(dev_mode: bool) {
@@ -111,7 +119,10 @@ pub fn run(dev_mode: bool) {
                 app_settings.webhook_id.clone(),
             );
             ha_client.set_update_interval(app_settings.update_interval);
-            let mut collector = SensorCollector::new(&app_settings.enabled_sensors);
+            let mut collector = SensorCollector::new(
+                &app_settings.enabled_sensors,
+                &app_settings.sensor_identity_map,
+            );
             let helper_path = handle
                 .path()
                 .resource_dir()
@@ -129,6 +140,7 @@ pub fn run(dev_mode: bool) {
 
             // Create shared state
             let state = Arc::new(AppState {
+                app_handle: handle.clone(),
                 settings: Mutex::new(app_settings.clone()),
                 ha_client: Mutex::new(ha_client),
                 collector: Mutex::new(collector),
@@ -318,26 +330,7 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
     if *state.is_registered.lock().await {
-        let device_id = state.settings.lock().await.device_id.clone();
-        let info = crate::sensors::system_info::collect();
-        let request = RegistrationRequest {
-            device_id,
-            device_name: info.hostname,
-            manufacturer: info.motherboard_manufacturer,
-            model: info.motherboard_model,
-            os_name: Some(info.os_name),
-            os_version: Some(info.os_version),
-            app_version: Some(env!("CARGO_PKG_VERSION").into()),
-        };
-        if let Err(error) = state
-            .ha_client
-            .lock()
-            .await
-            .update_registration(&request)
-            .await
-        {
-            log::warn!("Could not refresh device metadata: {error}");
-        }
+        refresh_device_metadata(&state).await;
     }
 
     let mut cycle_count: u64 = 0;
@@ -404,5 +397,34 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
         }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
+    }
+}
+
+async fn refresh_device_metadata(state: &AppState) {
+    let device_id = state.settings.lock().await.device_id.clone();
+    let info = match tokio::task::spawn_blocking(crate::sensors::system_info::collect).await {
+        Ok(info) => info,
+        Err(error) => {
+            log::warn!("Could not collect device metadata: {error}");
+            return;
+        }
+    };
+    let request = RegistrationRequest {
+        device_id,
+        device_name: info.hostname,
+        manufacturer: info.motherboard_manufacturer,
+        model: info.motherboard_model,
+        os_name: Some(info.os_name),
+        os_version: Some(info.os_version),
+        app_version: Some(env!("CARGO_PKG_VERSION").into()),
+    };
+    if let Err(error) = state
+        .ha_client
+        .lock()
+        .await
+        .update_registration(&request)
+        .await
+    {
+        log::warn!("Could not refresh device metadata: {error}");
     }
 }

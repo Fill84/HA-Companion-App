@@ -7,6 +7,7 @@ pub struct GpuData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GpuInfo {
+    pub physical_id: Option<String>,
     pub name: String,
     pub vendor: String,
     pub usage_percent: Option<f32>,
@@ -82,6 +83,7 @@ fn collect_nvidia() -> Option<Vec<GpuInfo>> {
             let driver_version = nvml.sys_driver_version().ok();
 
             gpus.push(GpuInfo {
+                physical_id: device.uuid().ok().map(|id| format!("nvml:{id}")),
                 name,
                 vendor: "NVIDIA".to_string(),
                 usage_percent: utilization,
@@ -109,7 +111,7 @@ fn collect_wmi() -> Option<Vec<GpuInfo>> {
     let wmi_con = WMIConnection::new(com_lib).ok()?;
 
     let results: Vec<HashMap<String, wmi::Variant>> = wmi_con
-        .raw_query("SELECT Name, AdapterRAM, DriverVersion FROM Win32_VideoController")
+        .raw_query("SELECT Name, PNPDeviceID, AdapterRAM, DriverVersion FROM Win32_VideoController")
         .ok()?;
 
     let mut gpus = Vec::new();
@@ -128,11 +130,7 @@ fn collect_wmi() -> Option<Vec<GpuInfo>> {
                 "Unknown".to_string()
             };
 
-        let vram_total = match result.get("AdapterRAM") {
-            Some(wmi::Variant::UI4(v)) => Some(*v as u64 / 1_000_000),
-            Some(wmi::Variant::I4(v)) => Some(*v as u64 / 1_000_000),
-            _ => None,
-        };
+        let vram_total = adapter_ram_mb(result.get("AdapterRAM"));
 
         let driver_version = match result.get("DriverVersion") {
             Some(wmi::Variant::String(s)) => Some(s.clone()),
@@ -140,6 +138,10 @@ fn collect_wmi() -> Option<Vec<GpuInfo>> {
         };
 
         gpus.push(GpuInfo {
+            physical_id: result.get("PNPDeviceID").and_then(|value| match value {
+                wmi::Variant::String(id) if !id.is_empty() => Some(format!("pnp:{id}")),
+                _ => None,
+            }),
             name,
             vendor,
             usage_percent: None, // WMI doesn't provide real-time usage
@@ -154,6 +156,28 @@ fn collect_wmi() -> Option<Vec<GpuInfo>> {
         None
     } else {
         Some(gpus)
+    }
+}
+
+#[cfg(windows)]
+fn adapter_ram_mb(value: Option<&wmi::Variant>) -> Option<u64> {
+    let bytes = match value? {
+        wmi::Variant::UI4(bytes) => *bytes as u64,
+        wmi::Variant::I4(bytes) => u64::try_from(*bytes).ok()?,
+        _ => return None,
+    };
+    Some(bytes / 1_000_000)
+}
+
+#[cfg(all(test, windows))]
+mod wmi_tests {
+    use super::adapter_ram_mb;
+
+    #[test]
+    fn negative_signed_adapter_ram_is_not_a_huge_vram_measurement() {
+        assert_eq!(adapter_ram_mb(Some(&wmi::Variant::I4(-1))), None);
+        assert_eq!(adapter_ram_mb(Some(&wmi::Variant::I4(1_000_000))), Some(1));
+        assert_eq!(adapter_ram_mb(Some(&wmi::Variant::UI4(2_000_000))), Some(2));
     }
 }
 
@@ -179,6 +203,7 @@ fn collect_linux() -> Option<Vec<GpuInfo>> {
                     .trim()
                     .to_string();
                 gpus.push(GpuInfo {
+                    physical_id: None,
                     name: gpu_name,
                     vendor: "AMD".to_string(),
                     usage_percent: None,
@@ -197,6 +222,9 @@ fn collect_linux() -> Option<Vec<GpuInfo>> {
             if vendor.trim() == "0x8086" {
                 // Intel vendor ID
                 gpus.push(GpuInfo {
+                    physical_id: std::fs::canonicalize("/sys/class/drm/card0/device")
+                        .ok()
+                        .map(|path| format!("sysfs:{}", path.display())),
                     name: "Intel Integrated Graphics".to_string(),
                     vendor: "Intel".to_string(),
                     usage_percent: None,
@@ -255,6 +283,7 @@ fn collect_macos() -> Option<Vec<GpuInfo>> {
             });
 
         gpus.push(GpuInfo {
+            physical_id: None,
             name,
             vendor,
             usage_percent: None,

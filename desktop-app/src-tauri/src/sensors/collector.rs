@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{SecondsFormat, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -6,6 +6,60 @@ use sysinfo::System;
 
 use super::temperature::TemperatureReader;
 use super::{battery, cpu, disk, gpu, memory, network, system_info};
+
+fn assign_sensor_suffixes(
+    map: &mut HashMap<String, String>,
+    category: &str,
+    physical_ids: &[Option<String>],
+) -> Vec<Option<String>> {
+    let prefix = format!("{category}:");
+    let mut counts = HashMap::new();
+    for id in physical_ids.iter().filter_map(|id| id.as_deref()) {
+        *counts.entry(id).or_insert(0usize) += 1;
+    }
+    let mut used: HashSet<String> = map
+        .iter()
+        .filter(|(key, _)| key.starts_with(&prefix))
+        .map(|(_, suffix)| suffix.clone())
+        .collect();
+    let had_assignment = !used.is_empty();
+    physical_ids
+        .iter()
+        .map(|physical_id| {
+            let Some(id) = physical_id.as_deref().filter(|id| !id.is_empty()) else {
+                return (physical_ids.len() == 1 && !had_assignment).then(String::new);
+            };
+            if counts.get(id) != Some(&1) {
+                return None;
+            }
+            let key = format!("{prefix}{id}");
+            if let Some(suffix) = map.get(&key) {
+                let aliases = map
+                    .iter()
+                    .filter(|(other_key, other_suffix)| {
+                        other_key.starts_with(&prefix) && *other_suffix == suffix
+                    })
+                    .count();
+                return (aliases == 1).then(|| suffix.clone());
+            }
+            let suffix = if physical_ids.len() == 1 && !had_assignment {
+                String::new()
+            } else {
+                let mut index = 1usize;
+                loop {
+                    let candidate = format!("_stable_{index}");
+                    if !used.contains(&candidate) {
+                        break candidate;
+                    }
+                    index += 1;
+                }
+            };
+            used.insert(suffix.clone());
+            map.insert(key, suffix.clone());
+            Some(suffix)
+        })
+        .collect()
+}
 
 fn rounded(value: f64, decimal_places: i32) -> f64 {
     let factor = 10_f64.powi(decimal_places);
@@ -113,11 +167,15 @@ pub struct SensorValue {
 pub struct SensorCollector {
     sys: System,
     enabled_sensors: HashMap<String, bool>,
+    identity_map: HashMap<String, String>,
     temperature: TemperatureReader,
 }
 
 impl SensorCollector {
-    pub fn new(enabled_sensors: &HashMap<String, bool>) -> Self {
+    pub fn new(
+        enabled_sensors: &HashMap<String, bool>,
+        identity_map: &HashMap<String, String>,
+    ) -> Self {
         let sys = System::new_with_specifics(
             sysinfo::RefreshKind::new()
                 .with_cpu(sysinfo::CpuRefreshKind::everything())
@@ -127,8 +185,13 @@ impl SensorCollector {
         Self {
             sys,
             enabled_sensors: enabled_sensors.clone(),
+            identity_map: identity_map.clone(),
             temperature: TemperatureReader::new(None, false),
         }
+    }
+
+    pub fn identity_map(&self) -> HashMap<String, String> {
+        self.identity_map.clone()
     }
 
     fn is_enabled(&self, sensor_id: &str) -> bool {
@@ -359,12 +422,14 @@ impl SensorCollector {
         // GPU sensors (dynamic)
         if self.is_enabled("gpu") {
             let gpu_data = gpu::collect();
-            for (i, gpu_info) in gpu_data.gpus.iter().enumerate() {
-                let suffix = if gpu_data.gpus.len() > 1 {
-                    format!("_{}", i)
-                } else {
-                    String::new()
-                };
+            let identities: Vec<_> = gpu_data
+                .gpus
+                .iter()
+                .map(|gpu| gpu.physical_id.clone())
+                .collect();
+            let suffixes = assign_sensor_suffixes(&mut self.identity_map, "gpu", &identities);
+            for (i, (gpu_info, suffix)) in gpu_data.gpus.iter().zip(suffixes).enumerate() {
+                let Some(suffix) = suffix else { continue };
 
                 if let Some(usage) = gpu_info.usage_percent {
                     sensors.push(SensorValue {
@@ -475,12 +540,14 @@ impl SensorCollector {
         // Battery sensors (dynamic)
         if self.is_enabled("battery") {
             let battery_data = battery::collect();
-            for (i, bat) in battery_data.batteries.iter().enumerate() {
-                let suffix = if battery_data.batteries.len() > 1 {
-                    format!("_{}", i)
-                } else {
-                    String::new()
-                };
+            let identities: Vec<_> = battery_data
+                .batteries
+                .iter()
+                .map(|bat| bat.physical_id.clone())
+                .collect();
+            let suffixes = assign_sensor_suffixes(&mut self.identity_map, "battery", &identities);
+            for (i, (bat, suffix)) in battery_data.batteries.iter().zip(suffixes).enumerate() {
+                let Some(suffix) = suffix else { continue };
 
                 sensors.push(SensorValue {
                     unique_id: format!("battery_level{}", suffix),
@@ -745,12 +812,14 @@ impl SensorCollector {
 
         // Display info (static)
         if self.is_enabled("display") {
-            for (i, display) in sys_info.displays.iter().enumerate() {
-                let suffix = if sys_info.displays.len() > 1 {
-                    format!("_{}", i + 1)
-                } else {
-                    String::new()
-                };
+            let identities: Vec<_> = sys_info
+                .displays
+                .iter()
+                .map(|display| display.physical_id.clone())
+                .collect();
+            let suffixes = assign_sensor_suffixes(&mut self.identity_map, "display", &identities);
+            for (i, (display, suffix)) in sys_info.displays.iter().zip(suffixes).enumerate() {
+                let Some(suffix) = suffix else { continue };
 
                 sensors.push(SensorValue {
                     unique_id: format!("display_resolution{}", suffix),
@@ -784,12 +853,14 @@ impl SensorCollector {
         // GPU model (static)
         if self.is_enabled("gpu") {
             let gpu_data = gpu::collect();
-            for (i, gpu_info) in gpu_data.gpus.iter().enumerate() {
-                let suffix = if gpu_data.gpus.len() > 1 {
-                    format!("_{}", i)
-                } else {
-                    String::new()
-                };
+            let identities: Vec<_> = gpu_data
+                .gpus
+                .iter()
+                .map(|gpu| gpu.physical_id.clone())
+                .collect();
+            let suffixes = assign_sensor_suffixes(&mut self.identity_map, "gpu", &identities);
+            for (i, (gpu_info, suffix)) in gpu_data.gpus.iter().zip(suffixes).enumerate() {
+                let Some(suffix) = suffix else { continue };
 
                 sensors.push(SensorValue {
                     unique_id: format!("gpu_model{}", suffix),
@@ -903,10 +974,57 @@ pub struct SensorListItem {
 mod tests {
     use super::*;
 
+    #[test]
+    fn physical_sensor_ids_survive_hotplug_and_reordering() {
+        let mut map = HashMap::new();
+        let first = assign_sensor_suffixes(&mut map, "gpu", &[Some("pci:a".into())]);
+        assert_eq!(first, vec![Some(String::new())]);
+        let added = assign_sensor_suffixes(
+            &mut map,
+            "gpu",
+            &[Some("pci:a".into()), Some("pci:b".into())],
+        );
+        assert_eq!(added, vec![Some(String::new()), Some("_stable_1".into())]);
+        let reordered = assign_sensor_suffixes(
+            &mut map,
+            "gpu",
+            &[Some("pci:b".into()), Some("pci:a".into())],
+        );
+        assert_eq!(
+            reordered,
+            vec![Some("_stable_1".into()), Some(String::new())]
+        );
+        let restored = assign_sensor_suffixes(&mut map, "gpu", &[Some("pci:b".into())]);
+        assert_eq!(restored, vec![Some("_stable_1".into())]);
+    }
+
+    #[test]
+    fn ambiguous_hardware_never_reuses_an_index_id() {
+        let mut map = HashMap::new();
+        let first_multi = assign_sensor_suffixes(
+            &mut map,
+            "gpu",
+            &[Some("pci:a".into()), Some("pci:b".into())],
+        );
+        assert_eq!(
+            first_multi,
+            vec![Some("_stable_1".into()), Some("_stable_2".into())]
+        );
+        assert_eq!(
+            assign_sensor_suffixes(
+                &mut map,
+                "gpu",
+                &[Some("pci:b".into()), Some("pci:b".into())]
+            ),
+            vec![None, None]
+        );
+        assert_eq!(assign_sensor_suffixes(&mut map, "gpu", &[None]), vec![None]);
+    }
+
     #[cfg(windows)]
     #[test]
     fn disabled_temperature_provider_clears_the_existing_entity_value() {
-        let mut collector = SensorCollector::new(&HashMap::new());
+        let mut collector = SensorCollector::new(&HashMap::new(), &HashMap::new());
         let mut enabled: HashMap<String, bool> = collector
             .get_sensor_list()
             .into_iter()

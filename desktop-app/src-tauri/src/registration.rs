@@ -1,12 +1,12 @@
 use crate::ha_client::{HaClient, RegistrationRequest};
-use crate::sensors::collector::SensorCollector;
+use crate::sensors::collector::SensorValue;
 use crate::settings::AppSettings;
 
 /// Perform full device registration with HA
 pub async fn register_device(
     settings: &mut AppSettings,
     ha_client: &mut HaClient,
-    collector: &mut SensorCollector,
+    all_sensors: &[SensorValue],
     app_handle: &tauri::AppHandle,
 ) -> Result<String, String> {
     // Validate settings
@@ -20,7 +20,9 @@ pub async fn register_device(
     }
 
     // Collect device metadata
-    let sys_info = crate::sensors::system_info::collect();
+    let sys_info = tokio::task::spawn_blocking(crate::sensors::system_info::collect)
+        .await
+        .map_err(|error| format!("Device metadata worker failed: {error}"))?;
 
     let registration = RegistrationRequest {
         device_id: settings.device_id.clone(),
@@ -71,8 +73,6 @@ pub async fn register_device(
         // first sensor registration is retried with exponential backoff. On a
         // healthy HA this typically succeeds within 1-2 seconds; on a slow or
         // heavily loaded HA we keep trying for ~25s before giving up.
-        let all_sensors = collector.collect_all();
-
         let first_sensor = all_sensors.first().cloned().ok_or_else(|| {
             log::error!("[HA] No sensors collected — cannot complete registration");
             "No sensors available to register".to_string()
@@ -133,7 +133,7 @@ pub async fn register_device(
         }
 
         // Send initial sensor states
-        if let Err(e) = ha_client.update_sensors(&all_sensors, "all").await {
+        if let Err(e) = ha_client.update_sensors(all_sensors, "all").await {
             log::error!("[HA] Initial sensor update failed: {}", e);
             return Err(format!("Initial sensor update failed: {}", e));
         }
@@ -153,25 +153,4 @@ pub async fn register_device(
     }
     log::info!("Device registration and initial sensor update succeeded");
     Ok(webhook_id)
-}
-
-/// Re-register device (when server URL or token changes)
-#[allow(dead_code)]
-pub async fn re_register(
-    settings: &mut AppSettings,
-    ha_client: &mut HaClient,
-    collector: &mut SensorCollector,
-    app_handle: &tauri::AppHandle,
-) -> Result<String, String> {
-    // Clear existing webhook_id
-    settings.webhook_id = None;
-    settings
-        .save(app_handle)
-        .map_err(|e| format!("Failed to save settings: {}", e))?;
-
-    // Update HA client
-    ha_client.update_config(settings.server_url.clone(), settings.access_token.clone());
-
-    // Perform fresh registration
-    register_device(settings, ha_client, collector, app_handle).await
 }
