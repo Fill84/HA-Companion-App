@@ -13,9 +13,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - uses: https://github.com/dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Install Rust toolchain
+        shell: pwsh
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
       - run: corepack enable
         shell: pwsh
       - name: Install web dependencies
