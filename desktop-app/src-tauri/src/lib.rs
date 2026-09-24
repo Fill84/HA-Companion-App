@@ -93,11 +93,15 @@ pub fn run(dev_mode: bool) {
 
             // Load settings
             let app_settings = AppSettings::load(&handle);
-            let autostart_result = if app_settings.autostart {
-                handle.autolaunch().enable()
-            } else {
-                handle.autolaunch().disable()
-            };
+            let autostart_result = handle.autolaunch().is_enabled().and_then(|enabled| {
+                if enabled == app_settings.autostart {
+                    Ok(())
+                } else if app_settings.autostart {
+                    handle.autolaunch().enable()
+                } else {
+                    handle.autolaunch().disable()
+                }
+            });
             if let Err(error) = autostart_result {
                 log::warn!("Could not reconcile system autostart: {error}");
             }

@@ -419,7 +419,7 @@ pub fn open_dashboard_view<R: tauri::Runtime, M: Manager<R>>(
     token: &str,
 ) -> Result<(), String> {
     let base_url = server_url.trim_end_matches('/');
-    log::info!("[Dashboard] Opening dashboard view for: {}", base_url);
+    log::info!("[Dashboard] Opening configured Home Assistant view");
 
     // Close existing HA child webview if any
     if let Some(existing) = manager.get_webview("ha-view") {
