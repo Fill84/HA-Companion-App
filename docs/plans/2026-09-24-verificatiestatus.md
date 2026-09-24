@@ -2,6 +2,8 @@
 
 Bijgewerkt: 24 september 2026. Dit is de uitvoeringsstatus bij de [specificatie](../specs/2026-09-24-project-recovery.md), geen releaseverklaring. `Gedeeltelijk` betekent dat code bestaat maar ten minste één acceptatieproef uit de audit nog ontbreekt. Geen van de 54 auditpunten krijgt op basis van alleen een unit-test de status volledig afgerond.
 
+Nieuwe architectuureis: de gebruiker heeft de extern geïnstalleerde PawnIO-/LibreHardwareMonitor-helperroute vervangen door [volledig geïntegreerde sensortoegang](../specs/2026-09-24-integrated-sensors.md). Het [nieuwe plan](2026-09-24-integrated-sensors.md) en de gepinde driverartefacten zijn voorbereid; de app gebruikt momenteel **nog de oude helperroute**. De geïntegreerde installatie, service, IPC en echte temperatuurproef zijn open releasepoorten. Oudere Windows-providervermeldingen hieronder beschrijven uitsluitend de huidige tussenstand.
+
 | Status | Audit-ID's | Nog nodig voor afronding |
 |---|---|---|
 | Gedeeltelijk | SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-06, SEC-07, SEC-08, SEC-09, SEC-10 | Echte webview-/TLS-/upgrade-/HA-permissietests, legacy-driverinventaris en redactiecontrole. `get_settings` en registratiecommands leveren geen volledig token of webhook-ID meer. Opslagmigratie naar de OS-kluis is geïmplementeerd. Wegwerpcredential slaagt lokaal op `phill-pc`, maar faalt op `beast-unit` via SSH met Windows `NoStorageAccess(Error(1312))`; een interactieve desktopsessie moet nog getest worden. Linux Secret Service en macOS Keychain zijn niet getest. |
