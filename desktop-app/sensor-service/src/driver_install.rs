@@ -5,6 +5,8 @@ use std::ffi::OsStr;
 use std::io;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use windows_service::service::{ServiceAccess, ServiceState, ServiceType};
+use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 use windows_sys::core::GUID;
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
     SetupDiCallClassInstaller, SetupDiCreateDeviceInfoList, SetupDiCreateDeviceInfoW,
@@ -145,12 +147,85 @@ fn verify_package(dir: &Path) -> Result<PathBuf> {
     Ok(dir.join("PawnIO.inf"))
 }
 
+fn service_binary_path(path: &Path) -> Result<PathBuf> {
+    let raw = path.to_string_lossy();
+    let prefix = r"\SystemRoot\";
+    if raw
+        .to_ascii_lowercase()
+        .starts_with(&prefix.to_ascii_lowercase())
+    {
+        let windows = std::env::var_os("SystemRoot").context("SystemRoot is missing")?;
+        return Ok(PathBuf::from(windows).join(&raw[prefix.len()..]));
+    }
+    anyhow::ensure!(path.is_absolute(), "PawnIO service path is not absolute");
+    Ok(path.to_path_buf())
+}
+
+fn verified_existing_service(service: &windows_service::service::Service) -> Result<()> {
+    let config = service.query_config()?;
+    anyhow::ensure!(
+        config.service_type == ServiceType::KERNEL_DRIVER,
+        "existing PawnIO service is not a kernel driver"
+    );
+    let binary = service_binary_path(&config.executable_path)?;
+    let bytes = std::fs::read(&binary).context("reading existing PawnIO driver")?;
+    anyhow::ensure!(
+        format!("{:x}", Sha256::digest(&bytes)) == HASHES[2],
+        "existing PawnIO driver differs from the pinned signed version"
+    );
+    verify_package(binary.parent().context("PawnIO driver directory missing")?)?;
+    Ok(())
+}
+
+fn reuse_existing_service(service: windows_service::service::Service) -> Result<()> {
+    verified_existing_service(&service)?;
+    if service.query_status()?.current_state == ServiceState::Stopped {
+        service.start(&[] as &[&str])?;
+    }
+    let mut reader = ha_companion_sensor_core::pawnio::IntelReader::open()
+        .context("opening existing PawnIO driver")?;
+    anyhow::ensure!(
+        reader.package_celsius()?.is_some(),
+        "existing PawnIO driver did not return a valid Intel CPU temperature"
+    );
+    Ok(())
+}
+
+pub fn probe_existing() -> Result<()> {
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let service = manager.open_service(
+        "PawnIO",
+        ServiceAccess::QUERY_CONFIG | ServiceAccess::QUERY_STATUS | ServiceAccess::START,
+    )?;
+    reuse_existing_service(service)
+}
+
 pub fn ensure() -> Result<bool> {
     if !cfg!(target_arch = "x86_64") {
         bail!("no validated Windows ARM64 CPU temperature reader is available");
     }
-    if matching_device()?.is_some() {
-        return Ok(false);
+    let existing_device = matching_device()?.is_some();
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    match manager.open_service(
+        "PawnIO",
+        ServiceAccess::QUERY_CONFIG | ServiceAccess::QUERY_STATUS | ServiceAccess::START,
+    ) {
+        Ok(service) => {
+            verified_existing_service(&service)?;
+            if existing_device {
+                reuse_existing_service(service)?;
+                return Ok(false);
+            }
+            // A staged driver service alone has no PnP device, so AddDevice has
+            // never created the user-mode link. Register our root device below.
+        }
+        Err(windows_service::Error::Winapi(error)) if error.raw_os_error() == Some(1060) => {
+            anyhow::ensure!(
+                !existing_device,
+                "PawnIO device exists without its driver service; refusing to replace it"
+            );
+        }
+        Err(error) => return Err(error.into()),
     }
     let inf = verify_package(&package_dir()?)?;
     let set =
@@ -220,5 +295,15 @@ mod tests {
             .join("../src-tauri/resources/pawnio")
             .join(ARCH);
         assert_eq!(verify_package(&dir).unwrap(), dir.join("PawnIO.inf"));
+    }
+
+    #[test]
+    fn resolves_kernel_service_systemroot_path() {
+        let resolved = service_binary_path(Path::new(
+            r"\SystemRoot\System32\DriverStore\FileRepository\pawnio.inf_amd64_x\PawnIO.sys",
+        ))
+        .unwrap();
+        assert!(resolved.is_absolute());
+        assert!(resolved.ends_with("PawnIO.sys"));
     }
 }

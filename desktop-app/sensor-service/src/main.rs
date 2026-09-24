@@ -12,6 +12,7 @@ fn main() -> anyhow::Result<()> {
         Some("--install-with-driver") => service::install(true),
         Some("--refresh-existing") => service::refresh_existing(),
         Some("--uninstall") => service::uninstall(),
+        Some("--probe-driver") => driver_install::probe_existing(),
         _ => Ok(service::run()?),
     }
 }
