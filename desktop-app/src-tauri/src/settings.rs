@@ -81,11 +81,10 @@ impl AppSettings {
     }
 
     /// Load settings from the Tauri store
-    pub fn load(app: &AppHandle) -> Self {
-        let store = match app.store(STORE_PATH) {
-            Ok(s) => s,
-            Err(_) => return Self::default(),
-        };
+    pub fn load(app: &AppHandle) -> Result<Self, String> {
+        let store = app
+            .store(STORE_PATH)
+            .map_err(|error| format!("Could not load settings store: {error}"))?;
 
         let server_url = store
             .get("server_url")
@@ -101,14 +100,31 @@ impl AppSettings {
             .get("webhook_id")
             .and_then(|v| v.as_str().map(|s| s.to_string()));
 
-        let device_id = store
+        let existing_device_id = store
             .get("device_id")
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .unwrap_or_else(|| {
+            .and_then(|v| v.as_str().filter(|id| !id.is_empty()).map(str::to_owned));
+        let device_id = match existing_device_id {
+            Some(id) => id,
+            None if !store.keys().is_empty() => {
+                return Err("Existing settings have no valid device identity".into());
+            }
+            None => {
                 let id = uuid::Uuid::new_v4().to_string();
                 store.set("device_id", serde_json::json!(id));
+                store
+                    .save()
+                    .map_err(|error| format!("Could not save new device identity: {error}"))?;
                 id
-            });
+            }
+        };
+
+        // Identity metadata must be valid before any credential migration can
+        // write to disk. Replacing a damaged map would risk reusing old IDs.
+        let enabled_sensors = parse_saved_map(store.get("enabled_sensors"), "enabled_sensors")?;
+        let sensor_identity_map =
+            parse_saved_map(store.get("sensor_identity_map"), "sensor_identity_map")?;
+        let legacy_gpu_aliases =
+            parse_saved_map(store.get("legacy_gpu_aliases"), "legacy_gpu_aliases")?;
 
         let access_token =
             match token_entry(&device_id).and_then(|entry| match entry.get_password() {
@@ -144,25 +160,12 @@ impl AppSettings {
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_else(|| "en".to_string());
 
-        let enabled_sensors: HashMap<String, bool> = store
-            .get("enabled_sensors")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        let sensor_identity_map: HashMap<String, String> = store
-            .get("sensor_identity_map")
-            .and_then(|value| serde_json::from_value(value.clone()).ok())
-            .unwrap_or_default();
-        let legacy_gpu_aliases: HashMap<String, Vec<String>> = store
-            .get("legacy_gpu_aliases")
-            .and_then(|value| serde_json::from_value(value.clone()).ok())
-            .unwrap_or_default();
-
         let autostart = store
             .get("autostart")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        Self {
+        Ok(Self {
             server_url,
             access_token,
             webhook_id,
@@ -173,7 +176,7 @@ impl AppSettings {
             sensor_identity_map,
             legacy_gpu_aliases,
             autostart,
-        }
+        })
     }
 
     /// Save settings to the Tauri store
@@ -240,6 +243,18 @@ impl AppSettings {
     }
 }
 
+fn parse_saved_map<T: serde::de::DeserializeOwned>(
+    value: Option<serde_json::Value>,
+    name: &str,
+) -> Result<HashMap<String, T>, String> {
+    value
+        .map(|value| {
+            serde_json::from_value(value).map_err(|error| format!("Invalid {name}: {error}"))
+        })
+        .transpose()
+        .map(Option::unwrap_or_default)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,6 +277,15 @@ mod tests {
         );
         assert_eq!(token_for_server(&encoded, "https://other.example"), None);
         assert_eq!(token_for_server("broken", "https://ha.example"), None);
+    }
+
+    #[test]
+    fn corrupt_sensor_identity_map_cannot_be_silently_replaced() {
+        let corrupted = serde_json::json!({"gpu:id": ["wrong type"]});
+        let result = parse_saved_map::<String>(Some(corrupted), "sensor_identity_map");
+        assert!(result.is_err());
+        let absent = parse_saved_map::<String>(None, "sensor_identity_map").unwrap();
+        assert!(absent.is_empty());
     }
 
     #[test]

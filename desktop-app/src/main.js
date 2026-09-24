@@ -134,7 +134,18 @@ function updateSetupTokenRequirement() {
 async function initApp() {
     try {
         // Get current settings
-        const settings = await window.__TAURI__.core.invoke("get_settings");
+        let settings;
+        try {
+            settings = await window.__TAURI__.core.invoke("get_settings");
+        } catch (err) {
+            console.error("Failed to load saved settings:", err);
+            showSetupScreen(null);
+            const errorEl = document.getElementById("setup-error");
+            errorEl.textContent = t("settings_startup_failed");
+            errorEl.classList.remove("hidden");
+            document.querySelector('#setup-form button[type="submit"]').disabled = true;
+            return;
+        }
         initialSettings = settings;
 
         // Set language

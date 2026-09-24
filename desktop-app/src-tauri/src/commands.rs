@@ -27,6 +27,7 @@ pub struct SettingsResponse {
 /// Get current settings
 #[tauri::command]
 pub async fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsResponse, String> {
+    ensure_settings_loaded(&state)?;
     let settings = state.settings.lock().await;
     let is_registered = *state.is_registered.lock().await;
 
@@ -45,6 +46,14 @@ pub async fn get_settings(state: State<'_, Arc<AppState>>) -> Result<SettingsRes
         autostart: settings.autostart,
         is_registered,
     })
+}
+
+fn ensure_settings_loaded(state: &AppState) -> Result<(), String> {
+    if state.settings_load_error.is_some() {
+        Err("Saved settings could not be loaded. Resolve the local settings file error and restart the app; the existing device identity has not been replaced.".into())
+    } else {
+        Ok(())
+    }
 }
 
 /// Read the version reported by the configured Home Assistant integration.
@@ -112,6 +121,7 @@ pub async fn save_settings(
     autostart: bool,
     enabled_sensors: Option<HashMap<String, bool>>,
 ) -> Result<(), String> {
+    ensure_settings_loaded(&state)?;
     let server_url = normalize_server_url(&server_url);
     let submitted_token = access_token.trim();
     let parsed_url =
@@ -291,6 +301,7 @@ pub(crate) async fn register_device_inner(
     state: &Arc<AppState>,
     app: &tauri::AppHandle,
 ) -> Result<(), String> {
+    ensure_settings_loaded(state)?;
     let all_sensors = crate::collect_snapshot(state.clone(), true).await?;
     let mut settings = state.settings.lock().await;
     let mut ha_client = state.ha_client.lock().await;
@@ -356,6 +367,7 @@ pub async fn reregister_device(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    ensure_settings_loaded(&state)?;
     let _guard = state.registration_lock.lock().await;
     // Drop in-memory + persisted webhook so register_device starts fresh.
     let (server_url, access_token) = {

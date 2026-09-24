@@ -24,6 +24,7 @@ use settings::AppSettings;
 /// Shared application state
 pub struct AppState {
     pub app_handle: tauri::AppHandle,
+    pub settings_load_error: Option<String>,
     pub settings: Mutex<AppSettings>,
     pub ha_client: Mutex<HaClient>,
     pub collector: Mutex<SensorCollector>,
@@ -130,18 +131,26 @@ pub fn run(dev_mode: bool) {
             let handle = app.handle().clone();
 
             // Load settings
-            let app_settings = AppSettings::load(&handle);
-            let autostart_result = handle.autolaunch().is_enabled().and_then(|enabled| {
-                if enabled == app_settings.autostart {
-                    Ok(())
-                } else if app_settings.autostart {
-                    handle.autolaunch().enable()
-                } else {
-                    handle.autolaunch().disable()
+            let (app_settings, settings_load_error) = match AppSettings::load(&handle) {
+                Ok(settings) => (settings, None),
+                Err(error) => {
+                    log::error!("Settings could not be loaded: {error}");
+                    (AppSettings::default(), Some(error))
                 }
-            });
-            if let Err(error) = autostart_result {
-                log::warn!("Could not reconcile system autostart: {error}");
+            };
+            if settings_load_error.is_none() {
+                let autostart_result = handle.autolaunch().is_enabled().and_then(|enabled| {
+                    if enabled == app_settings.autostart {
+                        Ok(())
+                    } else if app_settings.autostart {
+                        handle.autolaunch().enable()
+                    } else {
+                        handle.autolaunch().disable()
+                    }
+                });
+                if let Err(error) = autostart_result {
+                    log::warn!("Could not reconcile system autostart: {error}");
+                }
             }
             let mut ha_client = HaClient::new(
                 app_settings.server_url.clone(),
@@ -158,6 +167,7 @@ pub fn run(dev_mode: bool) {
             // Create shared state
             let state = Arc::new(AppState {
                 app_handle: handle.clone(),
+                settings_load_error,
                 settings: Mutex::new(app_settings.clone()),
                 ha_client: Mutex::new(ha_client),
                 collector: Mutex::new(collector),
