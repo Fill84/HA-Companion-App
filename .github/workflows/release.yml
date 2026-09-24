@@ -288,11 +288,18 @@ jobs:
           assert manifest['version']
           print('Integration version:', manifest['version'])
           PY
+      - name: Checkout desktop protocol fixture
+        uses: actions/checkout@v4
+        with:
+          path: desktop-source
+          persist-credentials: false
+      - name: Verify shared protocol fixture
+        run: cmp contracts/protocol-v1.json desktop-source/contracts/protocol-v1.json
       - name: Test integration contracts
         run: |
           python3 -m venv .venv
           .venv/bin/python -m pip install pytest
-          .venv/bin/python -m pytest -q
+          .venv/bin/python -m pytest -q tests
       - name: Build integration zip
         run: |
           zip -r ha-integration.zip custom_components hacs.json README.md

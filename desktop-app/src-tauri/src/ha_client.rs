@@ -107,6 +107,42 @@ struct SensorStateUpdate {
     sensor_icon: Option<String>,
 }
 
+fn registration_payload(sensor: &SensorValue) -> serde_json::Result<WebhookPayload> {
+    Ok(WebhookPayload {
+        protocol_version: 1,
+        command_type: "register_sensor".to_string(),
+        data: serde_json::to_value(SensorRegistration {
+            metadata: SensorMetadata::from(sensor),
+            sensor_state: sensor.state.clone(),
+        })?,
+    })
+}
+
+fn sensor_update_payload(
+    sensors: &[SensorValue],
+    update_interval: u64,
+    snapshot_scope: &str,
+) -> WebhookPayload {
+    let sensor_updates: Vec<SensorStateUpdate> = sensors
+        .iter()
+        .map(|sensor| SensorStateUpdate {
+            sensor_unique_id: sensor.unique_id.clone(),
+            sensor_state: sensor.state.clone(),
+            sensor_attributes: serde_json::to_value(&sensor.attributes).unwrap_or_default(),
+            sensor_icon: sensor.icon.clone(),
+        })
+        .collect();
+    WebhookPayload {
+        protocol_version: 1,
+        command_type: "update_sensor_states".to_string(),
+        data: serde_json::json!({
+            "sensors": sensor_updates,
+            "update_interval": update_interval,
+            "snapshot_scope": snapshot_scope,
+        }),
+    }
+}
+
 pub struct HaClient {
     client: Client,
     server_url: String,
@@ -319,14 +355,7 @@ impl HaClient {
 
         let url = format!("{}/api/webhook/{}", self.base_url(), webhook_id);
 
-        let payload = WebhookPayload {
-            protocol_version: 1,
-            command_type: "register_sensor".to_string(),
-            data: serde_json::to_value(SensorRegistration {
-                metadata: SensorMetadata::from(sensor),
-                sensor_state: sensor.state.clone(),
-            })?,
-        };
+        let payload = registration_payload(sensor)?;
 
         let response = self
             .client
@@ -384,25 +413,7 @@ impl HaClient {
 
         let url = format!("{}/api/webhook/{}", self.base_url(), webhook_id);
 
-        let sensor_updates: Vec<SensorStateUpdate> = sensors
-            .iter()
-            .map(|s| SensorStateUpdate {
-                sensor_unique_id: s.unique_id.clone(),
-                sensor_state: s.state.clone(),
-                sensor_attributes: serde_json::to_value(&s.attributes).unwrap_or_default(),
-                sensor_icon: s.icon.clone(),
-            })
-            .collect();
-
-        let payload = WebhookPayload {
-            protocol_version: 1,
-            command_type: "update_sensor_states".to_string(),
-            data: serde_json::json!({
-                "sensors": sensor_updates,
-                "update_interval": self.update_interval,
-                "snapshot_scope": snapshot_scope,
-            }),
-        };
+        let payload = sensor_update_payload(sensors, self.update_interval, snapshot_scope);
 
         let response = self
             .client
@@ -474,6 +485,38 @@ mod tests {
     use std::collections::HashMap;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+
+    #[test]
+    fn desktop_wire_payloads_match_shared_protocol_fixture() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../contracts/protocol-v1.json")).unwrap();
+        let data = &fixture["register_sensor"]["data"];
+        let mut sensor = SensorValue {
+            unique_id: data["sensor_unique_id"].as_str().unwrap().into(),
+            name: data["sensor_name"].as_str().unwrap().into(),
+            state: data["sensor_state"].clone(),
+            sensor_type: data["sensor_type"].as_str().unwrap().into(),
+            device_class: None,
+            unit_of_measurement: Some("%".into()),
+            state_class: Some("measurement".into()),
+            icon: Some("mdi:cpu-64-bit".into()),
+            attributes: HashMap::new(),
+            update_at_interval: true,
+        };
+        assert_eq!(
+            serde_json::to_value(registration_payload(&sensor).unwrap()).unwrap(),
+            fixture["register_sensor"]
+        );
+
+        sensor.state = serde_json::json!(21.5);
+        sensor
+            .attributes
+            .insert("measurement_source".into(), serde_json::json!("system"));
+        assert_eq!(
+            serde_json::to_value(sensor_update_payload(&[sensor], 60, "all")).unwrap(),
+            fixture["update_sensor_states"]
+        );
+    }
 
     #[test]
     fn device_offline_payload_serializes_with_expected_shape() {
