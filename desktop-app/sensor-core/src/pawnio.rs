@@ -143,6 +143,7 @@ impl IntelReader {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[allow(unused_unsafe)] // __cpuid is unsafe on older Rust toolchains, safe on newer ones.
 fn is_intel_family_six() -> bool {
     let vendor = unsafe { std::arch::x86_64::__cpuid(0) };
     if (vendor.ebx, vendor.edx, vendor.ecx) != (0x756e6547, 0x49656e69, 0x6c65746e) {
