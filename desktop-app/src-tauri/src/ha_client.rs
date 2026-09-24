@@ -249,7 +249,7 @@ impl HaClient {
 
     /// Check the saved token without changing device registration or its webhook.
     pub async fn check_access_token(&self) -> Result<reqwest::StatusCode, String> {
-        let url = format!("{}/api/desktop_app/registrations", self.base_url());
+        let url = format!("{}/api/", self.base_url());
         self.client
             .get(url)
             .bearer_auth(&self.access_token)
@@ -497,6 +497,32 @@ mod tests {
     use std::collections::HashMap;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn token_check_uses_core_api_for_integration_upgrade_compatibility() {
+        for (reply_status, expected_status) in [
+            ("200 OK", reqwest::StatusCode::OK),
+            ("401 Unauthorized", reqwest::StatusCode::UNAUTHORIZED),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = [0_u8; 2048];
+                let length = socket.read(&mut request).await.unwrap();
+                let request = String::from_utf8_lossy(&request[..length]);
+                assert!(request.starts_with("GET /api/ HTTP/1.1"));
+                assert!(request.contains("authorization: Bearer test-token"));
+                let response = format!(
+                    "HTTP/1.1 {reply_status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+                socket.write_all(response.as_bytes()).await.unwrap();
+            });
+            let client = HaClient::new(format!("http://{address}"), "test-token".into(), None);
+            assert_eq!(client.check_access_token().await.unwrap(), expected_status);
+            server.await.unwrap();
+        }
+    }
 
     #[test]
     fn desktop_wire_payloads_match_shared_protocol_fixture() {
