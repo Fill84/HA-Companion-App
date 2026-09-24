@@ -1,7 +1,9 @@
 {
     "bundle": {
+        "targets": ["nsis"],
         "resources": {
-            "resources/hwmon-net10/": "hwmon/"
+            "resources/sensor-service/": "sensor-service/",
+            "resources/pawnio/": "pawnio/"
         }
     }
 }

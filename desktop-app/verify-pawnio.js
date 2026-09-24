@@ -12,6 +12,7 @@ const expected = {
     'arm64/PawnIO.inf': '9989a2d6985f1131dc7618cb0a4e76f5e59c4837c5057ed765b80bc979ac00cb',
     'arm64/pawnio.cat': 'd95848578d62d33d9eed30b7478d323611818ff6a38c43363aca58777e2f8d35',
     'modules/IntelMSR.bin': 'd6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f',
+    'modules/AMDFamily17.bin': 'dae74615761b78bdf064dfb3e136252ddcc6fc727d88f14738d0e5800d427a91',
 };
 
 for (const [relative, hash] of Object.entries(expected)) {

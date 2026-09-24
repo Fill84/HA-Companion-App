@@ -123,20 +123,7 @@ pub fn run(dev_mode: bool) {
                 &app_settings.enabled_sensors,
                 &app_settings.sensor_identity_map,
             );
-            let helper_path = handle
-                .path()
-                .resource_dir()
-                .ok()
-                .map(|dir| dir.join("hwmon/ha-hwmon.exe"));
-            #[cfg(debug_assertions)]
-            let helper_path = helper_path.filter(|path| path.is_file()).or_else(|| {
-                Some(
-                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                        .join("resources/hwmon-net10/ha-hwmon.exe"),
-                )
-            });
-            collector
-                .configure_temperature_provider(helper_path, app_settings.cpu_temperature_provider);
+            collector.configure_temperature_provider(app_settings.cpu_temperature_provider);
 
             // Create shared state
             let state = Arc::new(AppState {

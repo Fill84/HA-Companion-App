@@ -14,9 +14,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -43,3 +40,14 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --lib
+      - name: Check integrated Windows sensor components
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          node desktop-app/verify-pawnio.js
+          cargo fmt --all --manifest-path desktop-app/sensor-core/Cargo.toml -- --check
+          cargo clippy --locked --manifest-path desktop-app/sensor-core/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path desktop-app/sensor-core/Cargo.toml
+          cargo fmt --all --manifest-path desktop-app/sensor-service/Cargo.toml -- --check
+          cargo clippy --locked --manifest-path desktop-app/sensor-service/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path desktop-app/sensor-service/Cargo.toml

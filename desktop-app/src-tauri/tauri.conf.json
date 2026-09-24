@@ -48,7 +48,8 @@
                 "type": "downloadBootstrapper"
             },
             "nsis": {
-                "installMode": "both"
+                "installMode": "perMachine",
+                "installerHooks": "./windows/sensor-hooks.nsh"
             }
         }
     },

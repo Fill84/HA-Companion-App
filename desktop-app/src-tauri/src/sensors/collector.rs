@@ -186,7 +186,7 @@ impl SensorCollector {
             sys,
             enabled_sensors: enabled_sensors.clone(),
             identity_map: identity_map.clone(),
-            temperature: TemperatureReader::new(None, false),
+            temperature: TemperatureReader::new(false),
         }
     }
 
@@ -198,12 +198,8 @@ impl SensorCollector {
         *self.enabled_sensors.get(sensor_id).unwrap_or(&true)
     }
 
-    pub fn configure_temperature_provider(
-        &mut self,
-        path: Option<std::path::PathBuf>,
-        enabled: bool,
-    ) {
-        self.temperature = TemperatureReader::new(path, enabled);
+    pub fn configure_temperature_provider(&mut self, enabled: bool) {
+        self.temperature = TemperatureReader::new(enabled);
     }
 
     pub fn set_temperature_provider(&mut self, enabled: bool) {

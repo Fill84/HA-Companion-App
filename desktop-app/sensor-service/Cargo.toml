@@ -1,0 +1,13 @@
+[package]
+name = "ha-companion-sensor-service"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1"
+sha2 = "0.10"
+ha-companion-sensor-core = { path = "../sensor-core" }
+tokio = { version = "1", features = ["rt", "net", "io-util", "time", "macros", "sync"] }
+windows-service = "0.8.1"
+windows-sys = { version = "0.61", features = ["Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation"] }
