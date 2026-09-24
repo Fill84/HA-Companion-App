@@ -118,6 +118,13 @@ fn collect_wmi() -> Option<Vec<GpuInfo>> {
             Some(wmi::Variant::String(s)) => s.clone(),
             _ => "Unknown GPU".to_string(),
         };
+        let pnp_id = result.get("PNPDeviceID").and_then(|value| match value {
+            wmi::Variant::String(id) if !id.is_empty() => Some(id.as_str()),
+            _ => None,
+        });
+        if super::is_ephemeral_remote_display(pnp_id, &name) {
+            continue;
+        }
 
         let vendor =
             if name.to_lowercase().contains("amd") || name.to_lowercase().contains("radeon") {
@@ -136,10 +143,7 @@ fn collect_wmi() -> Option<Vec<GpuInfo>> {
         };
 
         gpus.push(GpuInfo {
-            physical_id: result.get("PNPDeviceID").and_then(|value| match value {
-                wmi::Variant::String(id) if !id.is_empty() => Some(format!("pnp:{id}")),
-                _ => None,
-            }),
+            physical_id: pnp_id.map(|id| format!("pnp:{id}")),
             name,
             vendor,
             usage_percent: None, // WMI doesn't provide real-time usage

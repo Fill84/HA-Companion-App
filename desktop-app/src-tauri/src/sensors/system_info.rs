@@ -340,6 +340,10 @@ fn collect_displays() -> Vec<DisplayInfo> {
                 .get("Name")
                 .and_then(variant_to_string)
                 .unwrap_or_else(|| format!("Display {}", i + 1));
+            let physical_id = result.get("PNPDeviceID").and_then(variant_to_string);
+            if super::is_ephemeral_remote_display(physical_id.as_deref(), &name) {
+                continue;
+            }
 
             let h_res = result.get("CurrentHorizontalResolution").and_then(|v| match v {
                 Variant::UI4(n) => Some(*n),
@@ -359,7 +363,7 @@ fn collect_displays() -> Vec<DisplayInfo> {
 
             if let (Some(h), Some(v)) = (h_res, v_res) {
                 displays.push(DisplayInfo {
-                    physical_id: result.get("PNPDeviceID").and_then(variant_to_string),
+                    physical_id,
                     name,
                     resolution: format!("{}x{}", h, v),
                     refresh_rate_hz: refresh,
