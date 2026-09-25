@@ -8,6 +8,7 @@ function screen({ syncPending = false, sensors = [{ id: 'gpu', name: 'GPU', enab
     const elements = new Map();
     const calls = [];
     const alerts = [];
+    const documentListeners = {};
     function element() {
         const classes = new Set();
         return {
@@ -26,7 +27,7 @@ function screen({ syncPending = false, sensors = [{ id: 'gpu', name: 'GPU', enab
         };
     }
     const document = {
-        addEventListener() {},
+        addEventListener(name, fn) { documentListeners[name] = fn; },
         createElement: element,
         getElementById(id) {
             if (!elements.has(id)) elements.set(id, element());
@@ -45,8 +46,20 @@ function screen({ syncPending = false, sensors = [{ id: 'gpu', name: 'GPU', enab
         } } } },
     });
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/settings.js'), 'utf8'), context);
-    return { context, document, calls, alerts };
+    return { context, document, documentListeners, calls, alerts };
 }
+
+test('local context menu is suppressed and clicking outside Settings keeps it open', async () => {
+    const ui = screen();
+    let prevented = false;
+    ui.documentListeners.contextmenu({ preventDefault() { prevented = true; } });
+    assert.equal(prevented, true);
+    await ui.context.openSettings();
+    const overlay = ui.document.getElementById('settings-overlay');
+    overlay.listeners.click?.({ target: overlay });
+    assert.equal(overlay.classList.contains('hidden'), false);
+    assert.equal(ui.calls.some(call => call.name === 'load_dashboard'), false);
+});
 
 test('sensor choice is staged until Save and discarded by Cancel', async () => {
     const ui = screen();
@@ -72,6 +85,8 @@ test('each discovered reading can be disabled without disabling its group', asyn
         { id: 'gpu', name: 'GPU Sensors', enabled: true, updates_at_interval: true },
         { id: 'sensor:gpu_temperature', name: 'GPU Temperature', enabled: true,
             updates_at_interval: true, group_id: 'gpu' },
+        { id: 'sensor:gpu_usage', name: 'GPU Usage', enabled: true,
+            updates_at_interval: true, group_id: 'gpu' },
     ] });
     await ui.context.openSettings();
     const [group, reading] = ui.document.getElementById('sensor-list').children;
@@ -86,6 +101,45 @@ test('each discovered reading can be disabled without disabling its group', asyn
     group.children[0].checked = false;
     group.children[0].listeners.change();
     assert.equal(reading.children[0].disabled, true);
+});
+
+test('a single discovered reading uses one switch and keeps legacy group preference aligned', async () => {
+    const ui = screen({ sensors: [
+        { id: 'cpu_usage', name: 'CPU Usage', name_nl: 'CPU Gebruik',
+            enabled: true, updates_at_interval: true },
+        { id: 'sensor:cpu_usage', name: 'CPU Usage', enabled: true,
+            updates_at_interval: true, group_id: 'cpu_usage' },
+    ] });
+    await ui.context.openSettings();
+    const rows = ui.document.getElementById('sensor-list').children;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].className, 'sensor-row sensor-single');
+    assert.equal(rows[0].children[1]['data-sensor-nl'], 'CPU Gebruik');
+    assert.equal(rows[0].children[2].textContent, 'updates_at_interval');
+    const checkbox = rows[0].children[0];
+    checkbox.checked = false;
+    checkbox.listeners.change();
+    await ui.context.saveSettings();
+    const saved = ui.calls.find(call => call.name === 'save_settings').args.enabledSensors;
+    assert.equal(saved.cpu_usage, false);
+    assert.equal(saved['sensor:cpu_usage'], false);
+});
+
+test('one-row sensor can re-enable a previously disabled group', async () => {
+    const ui = screen({ sensors: [
+        { id: 'cpu_usage', name: 'CPU Usage', enabled: false, updates_at_interval: true },
+        { id: 'sensor:cpu_usage', name: 'CPU Usage', enabled: true,
+            updates_at_interval: true, group_id: 'cpu_usage' },
+    ] });
+    await ui.context.openSettings();
+    const checkbox = ui.document.getElementById('sensor-list').children[0].children[0];
+    assert.equal(checkbox.checked, false);
+    checkbox.checked = true;
+    checkbox.listeners.change();
+    await ui.context.saveSettings();
+    const saved = ui.calls.find(call => call.name === 'save_settings').args.enabledSensors;
+    assert.equal(saved.cpu_usage, true);
+    assert.equal(saved['sensor:cpu_usage'], true);
 });
 
 test('saved preferences with pending HA sync report saved state accurately', async () => {

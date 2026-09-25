@@ -165,25 +165,38 @@ async function populateSensorList() {
         container.innerHTML = "";
         const groupCheckboxes = new Map();
         const groupReadings = new Map();
+        const readingsByGroup = new Map();
+        for (const sensor of sensors) {
+            if (!sensor.group_id) continue;
+            if (!readingsByGroup.has(sensor.group_id)) readingsByGroup.set(sensor.group_id, []);
+            readingsByGroup.get(sensor.group_id).push(sensor);
+        }
 
         for (const sensor of sensors) {
+            if (sensor.group_id && readingsByGroup.get(sensor.group_id).length === 1) continue;
+            const singleReading = !sensor.group_id && readingsByGroup.get(sensor.id)?.length === 1
+                ? readingsByGroup.get(sensor.id)[0] : null;
+            const displayed = singleReading || sensor;
             const row = document.createElement("div");
-            row.className = "sensor-row " + (sensor.group_id ? "sensor-reading" : "sensor-group");
+            row.className = "sensor-row " + (singleReading ? "sensor-single"
+                : sensor.group_id ? "sensor-reading" : "sensor-group");
 
             const checkbox = document.createElement("input");
             checkbox.type = "checkbox";
-            checkbox.id = `sensor-${sensor.id}`;
-            checkbox.checked = sensor.enabled;
-            if (sensor.group_id) {
+            checkbox.id = `sensor-${displayed.id}`;
+            checkbox.checked = singleReading ? sensor.enabled && singleReading.enabled : sensor.enabled;
+            if (!singleReading && sensor.group_id) {
                 checkbox.disabled = !groupCheckboxes.get(sensor.group_id)?.checked;
                 if (!groupReadings.has(sensor.group_id)) groupReadings.set(sensor.group_id, []);
                 groupReadings.get(sensor.group_id).push(checkbox);
-            } else {
+            } else if (!singleReading) {
                 groupCheckboxes.set(sensor.id, checkbox);
             }
             checkbox.addEventListener("change", () => {
-                pendingSensorPreferences[sensor.id] = checkbox.checked;
-                if (!sensor.group_id) {
+                pendingSensorPreferences[displayed.id] = checkbox.checked;
+                if (singleReading) {
+                    pendingSensorPreferences[sensor.id] = checkbox.checked;
+                } else if (!sensor.group_id) {
                     for (const reading of groupReadings.get(sensor.id) || []) {
                         reading.disabled = !checkbox.checked;
                     }
@@ -191,18 +204,21 @@ async function populateSensorList() {
             });
 
             const label = document.createElement("label");
-            label.htmlFor = `sensor-${sensor.id}`;
-            label.setAttribute("data-sensor-key", sensor.id);
-            label.setAttribute("data-sensor-en", sensor.name);
-            label.setAttribute("data-sensor-nl", sensor.name_nl || sensor.name);
+            label.htmlFor = checkbox.id;
+            const nameEn = displayed.name;
+            const nameNl = singleReading && displayed.name === sensor.name
+                ? sensor.name_nl || sensor.name : displayed.name_nl || displayed.name;
+            label.setAttribute("data-sensor-key", displayed.id);
+            label.setAttribute("data-sensor-en", nameEn);
+            label.setAttribute("data-sensor-nl", nameNl);
             label.textContent = typeof currentLanguage !== "undefined" && currentLanguage === "nl"
-                ? (sensor.name_nl || sensor.name) : sensor.name;
+                ? nameNl : nameEn;
 
             const badge = document.createElement("span");
-            badge.className = "sensor-badge " + (!sensor.group_id ? "badge-group"
-                : sensor.updates_at_interval ? "badge-dynamic" : "badge-static");
-            const badgeKey = !sensor.group_id ? "sensor_group"
-                : sensor.updates_at_interval ? "updates_at_interval" : "static_sensor";
+            badge.className = "sensor-badge " + (!singleReading && !sensor.group_id ? "badge-group"
+                : displayed.updates_at_interval ? "badge-dynamic" : "badge-static");
+            const badgeKey = !singleReading && !sensor.group_id ? "sensor_group"
+                : displayed.updates_at_interval ? "updates_at_interval" : "static_sensor";
             badge.setAttribute("data-i18n", badgeKey);
             badge.textContent = t(badgeKey);
 
@@ -286,6 +302,8 @@ async function showMyIp() {
 }
 
 // Event listeners
+document.addEventListener("contextmenu", (event) => event.preventDefault(), true);
+
 document.addEventListener("DOMContentLoaded", () => {
     for (const button of document.querySelectorAll("[data-password-target]")) {
         button.addEventListener("click", () => togglePassword(button.dataset.passwordTarget));
@@ -295,13 +313,6 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("settings-save").addEventListener("click", saveSettings);
     document.getElementById("settings-show-ip").addEventListener("click", showMyIp);
     document.getElementById("settings-reconnect").addEventListener("click", reconnectNow);
-
-    // Close on overlay click
-    document.getElementById("settings-overlay").addEventListener("click", (e) => {
-        if (e.target === document.getElementById("settings-overlay")) {
-            closeSettings();
-        }
-    });
 
     // Close on Escape
     document.addEventListener("keydown", (e) => {
