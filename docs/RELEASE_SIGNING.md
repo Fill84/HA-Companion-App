@@ -4,13 +4,21 @@ De Windows-releasepoort controleert vóór publicatie de Authenticode-handtekeni
 
 Een zelfondertekend certificaat is geschikt voor een lokale proef, maar wordt op andere Windows-pc's niet standaard vertrouwd. Het aangetroffen WDK-testcertificaat is daarom geen publiek releasecertificaat. Voor publieke distributie moet de geregistreerde uitgever door een vertrouwde certificaatverstrekker worden gevalideerd.
 
-## Gratis open-sourceroute: SignPath Foundation
+## SignPath Foundation: geen directe oplossing voor deze release
 
 [SignPath Foundation](https://signpath.org/) biedt kosteloos publiek vertrouwde Authenticode-ondertekening voor geaccepteerde open-sourceprojecten. De handtekening vermeldt **SignPath Foundation** als uitgever, niet de naam van onze onderneming. Toelating is niet gegarandeerd: SignPath beoordeelt onder andere de projectreputatie, broncode, licenties, documentatie en releasegeschiedenis. De desktoprepository is MIT-gelicentieerd en heeft een publieke Windows-release; de meegeleverde OSS-componenten en hun licenties staan in de [componenteninventaris](specs/2026-09-24-third-party-components.md).
 
+Het aanvraagformulier vraagt ook persoonlijke gegevens en onderbouwing van de projectreputatie. Voor de huidige 1.0.5-release is geen SignPath-aanvraag ingediend of goedgekeurd. Deze route is daarom **niet beschikbaar als onmiddellijke gratis ondertekening**. Het formulier tonen of invullen levert op zichzelf geen certificaat of ondertekende installer op.
+
 De [OSS-voorwaarden](https://signpath.org/terms.html) vragen onder meer een openbare code-signing policy en privacyinformatie, MFA voor beheerders, een controleerbare build uit openbare broncode, rollen voor auteurs/reviewers/goedkeurders en handmatige goedkeuring per release. SignPath staat toe dat een ondertekend pakket een upstream-OSS-binary bevat; onze meegeleverde PawnIO-driver mag niet als eigen binary opnieuw door SignPath worden ondertekend. Voor de [GitHub-koppeling](https://docs.signpath.io/trusted-build-systems/github) moeten alle jobs vóór het signingverzoek op GitHub-hosted runners draaien. De private Forgejo-CI blijft nuttig voor ontwikkeling, maar levert op zichzelf geen door SignPath vertrouwde releaseherkomst.
 
-De Tauri-releasebuild moet worden opgesplitst in `build --no-bundle`, een SignPath-verzoek voor `ha-companion.exe`, `bundle` met die ondertekende app, en een tweede SignPath-verzoek voor de NSIS-installer. [Tauri ondersteunt een gescheiden build- en bundelstap](https://v2.tauri.app/distribute/). Daarna controleert de bestaande Authenticode-poort beide bestanden. Deze workflow kan pas met echte SignPath-projectgegevens en een geaccepteerde aanvraag end-to-end worden gevalideerd; de huidige workflow is nog op een eigen PFX-certificaat ingericht. Publiceer geen ongetekende release als de aanvraag wordt afgewezen.
+Als SignPath later alsnog wordt gekozen en het project wordt toegelaten, moet de Tauri-releasebuild worden opgesplitst in `build --no-bundle`, een SignPath-verzoek voor `ha-companion.exe`, `bundle` met die ondertekende app, en een tweede SignPath-verzoek voor de NSIS-installer. [Tauri ondersteunt een gescheiden build- en bundelstap](https://v2.tauri.app/distribute/). Daarna controleert de bestaande Authenticode-poort beide bestanden. De huidige workflow is nog op een eigen PFX-certificaat ingericht.
+
+## Kosteloze alternatieven en huidig besluitpunt
+
+Voor deze rechtstreeks verspreide NSIS-installer is **geen beschikbare kosteloze, publiek vertrouwde ondertekening vastgesteld**. Microsoft ondertekent MSIX-pakketten bij publicatie in de Microsoft Store, maar [MSIX ondersteunt geen installatie van Windows-drivers](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-prepare). Onze Windows-installatie levert de PawnIO-driver mee als standaardonderdeel; alleen voor gratis Store-ondertekening overstappen op MSIX voldoet daarom niet aan de huidige installatiespecificatie. Een zelfondertekend certificaat neemt de waarschuwing op andere pc's niet weg.
+
+De bestaande releasepoort blijft een geldige handtekening eisen en versie 1.0.5 blijft lokaal totdat een distributiekeuze expliciet is gemaakt. De concrete mogelijkheden zijn een publiek vertrouwde betaalde ondertekenroute, een later goedgekeurde SignPath-route, of een **bewust gekozen ongetekende distributie** met duidelijk vermelde Windows-waarschuwing, gecontroleerde herkomst en SHA-256-controle. Die laatste keuze vergt een afzonderlijke wijziging van de releasepoort en acceptatie van het beperkte vertrouwen; zij wordt niet als al genomen besluit vastgelegd.
 
 ## Betaalde alternatieve route voor de geregistreerde onderneming
 
