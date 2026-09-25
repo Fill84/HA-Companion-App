@@ -9,7 +9,7 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
   - Native system tray met context menu (Tonen/Verbergen, Instellingen, Afsluiten)
   - Auto-login in HA dashboard via access token injectie
   - Instelbare taal (EN/NL), settings modal, sensor enable/disable
-  - Beoogde release-artifacts: Windows NSIS (.exe), macOS (.dmg), Linux (.deb/.rpm/.AppImage); de platformmatrix is nog niet volledig gevalideerd
+  - Release 1.0.5: Windows x64 NSIS, macOS Apple Silicon DMG en Linux x86_64 DEB/RPM/AppImage; de macOS-/Linux-runtime is nog niet interactief gevalideerd
 
 - **Home Assistant Integratie:**
   - Custom component voor device registry, dynamische sensors, webhook-based updates
@@ -20,7 +20,7 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
 ## Installatie
 
 ### Desktop App
-1. Download een **gepubliceerde en geteste** release voor jouw platform van [GitHub Releases](https://github.com/Fill84/HA-Companion-App/releases). Versie 1.0.5 is pas beschikbaar zodra zij daar als publieke release verschijnt. Controleer versie en SHA-256 tegen het release-manifest. Een lokaal `target/`-bestand is geen actuele publieke release.
+1. Download [release 1.0.5](https://github.com/Fill84/HA-Companion-App/releases/tag/1.0.5) voor jouw beschikbare platform en architectuur. Controleer versie en SHA-256 tegen `release-manifest.json`. Een lokaal `target/`-bestand is geen publieke release.
    De komende Windows-installer is naar verwachting ongetekend. Windows kan `Onbekende uitgever` of een SmartScreen-waarschuwing tonen; de meegeleverde driver heeft wel een eigen leveranciershandtekening. Controleer de exacte release en de SHA-256 voordat je de installer uitvoert.
 2. Installeer de app en start deze
 3. Vul je Home Assistant server URL en Long-Lived Access Token in bij de eerste setup
