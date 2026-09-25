@@ -198,6 +198,7 @@ jobs:
         run: |
           cd desktop-app
           yarn install --frozen-lockfile
+          node build-web.js
           node --test tests/*.cjs
           cd src-tauri
           cargo fmt --all -- --check
@@ -266,6 +267,7 @@ jobs:
         run: |
           cd desktop-app
           yarn install --frozen-lockfile
+          node build-web.js
           node --test tests/*.cjs
           cd src-tauri
           cargo fmt --all -- --check
