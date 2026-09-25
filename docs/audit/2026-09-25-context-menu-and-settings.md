@@ -33,4 +33,11 @@
 
 - De lijst bevat de metingen die op deze computer op dat moment ontdekt worden. Een tijdelijk afwezig apparaat verschijnt weer zodra het opnieuw ontdekt wordt; zijn eerder opgeslagen voorkeur en ID blijven bewaard. Een groepsschakelaar blijft zichtbaar, ook als de groep nu geen metingen heeft.
 - De sensornamen van dynamisch ontdekte hardware volgen momenteel de Engelse namen van de collector; de vaste groepsnamen en de Settings-bediening zijn in Engels en Nederlands beschikbaar.
-- Een broncode- en testcontrole bevestigt de catalogusdekking, instellingensemantiek en HA-`unknown`-route. De nieuwe UI en rechtsklikonderdrukking zijn nog niet met een nieuwe installer interactief op phill-pc en beast-unit beproefd. De gepubliceerde 1.0.5-installatie bevat deze wijzigingen niet.
+- Een broncode- en testcontrole bevestigt de catalogusdekking, instellingensemantiek en HA-`unknown`-route. De gepubliceerde 1.0.5-installatie bevat deze wijzigingen niet.
+
+## Lokale installatieproef op phill-pc — 26 september 2026
+
+- Vanaf commit `4e0b377` is zonder versiebump een Windows NSIS-installer gebouwd (`Home Assistant Companion_1.0.5_x64-setup.exe`, SHA-256 `FF2786C8FF5DB23EBFB90894FF9CF0D76FF49CD5A84B8D537C7E87009E74A4EB`). Dit is een lokale proefbuild, geen nieuwe publieke 1.0.5-release.
+- Voor installatie is `settings.json` bytegelijk geback-upt. De verhoogde, stille installatie eindigde met code 0. De instellingenshash was direct na installatie nog gelijk aan de back-up, en de sensordienst draaide. Het geïnstalleerde executable heeft dezelfde grootte als de bouwoutput en verschilt alleen in drie bytes die Tauri bij het bundelen aanpast.
+- De geïnstalleerde GUI startte uit `C:\Program Files\Home Assistant Companion\ha-companion.exe`; de app-log bevestigt een HA-ping met HTTP 200 en een aangemaakte dashboardwebview. Een echte rechtsklik op een leeg dashboarddeel bracht geen Edge-contextmenu meer in beeld. De dashboardkaarten toonden actuele CPU-, RAM-, GPU- en CPU-temperatuurwaarden.
+- De nieuwe Settings-lijst is op phill-pc nog niet interactief gecontroleerd: een poging via de Windows-tray verloor focus tijdens automatisering. De app bleef draaien en er zijn geen Settings-keuzes gewijzigd. Ook de per-meting-aan/uitroute is op deze geïnstalleerde build nog niet end-to-end tegen HA beproefd; de bestaande automatische tests dekken de logica.
