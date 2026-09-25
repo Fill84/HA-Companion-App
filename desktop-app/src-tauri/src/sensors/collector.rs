@@ -272,6 +272,10 @@ impl SensorCollector {
         *self.enabled_sensors.get(sensor_id).unwrap_or(&true)
     }
 
+    fn retain_enabled_readings(&self, sensors: &mut Vec<SensorValue>) {
+        sensors.retain(|sensor| self.is_enabled(&format!("sensor:{}", sensor.unique_id)));
+    }
+
     /// Collect all sensors (both static and dynamic) — used at startup
     pub fn collect_all(&mut self) -> Vec<SensorValue> {
         let mut sensors = Vec::new();
@@ -279,6 +283,7 @@ impl SensorCollector {
         sensors.extend(self.collect_static());
         sensors.extend(self.collect_dynamic());
 
+        self.retain_enabled_readings(&mut sensors);
         sensors
     }
 
@@ -691,6 +696,7 @@ impl SensorCollector {
             }
         }
 
+        self.retain_enabled_readings(&mut sensors);
         sensors
     }
 
@@ -989,17 +995,45 @@ impl SensorCollector {
     }
 
     /// Get list of all possible sensors and their enabled status
-    pub fn get_sensor_list(&self) -> Vec<SensorListItem> {
-        catalog::SENSOR_CHOICES
-            .iter()
-            .map(|choice| SensorListItem {
+    pub fn get_sensor_list(&mut self) -> Vec<SensorListItem> {
+        // Probe with every group enabled so disabled groups remain discoverable.
+        // Keep live preferences and provider state untouched during discovery.
+        let mut probe = Self::new(
+            &HashMap::new(),
+            &self.identity_map,
+            &self.legacy_gpu_aliases,
+        );
+        let readings = probe.collect_all();
+        self.identity_map = probe.identity_map;
+        let mut seen = HashSet::new();
+        let mut list = Vec::new();
+        for choice in catalog::SENSOR_CHOICES {
+            list.push(SensorListItem {
                 id: choice.id.to_string(),
                 name: choice.name_en.to_string(),
                 name_nl: choice.name_nl.to_string(),
                 enabled: self.is_enabled(choice.id),
                 updates_at_interval: choice.updates_at_interval,
-            })
-            .collect()
+                group_id: None,
+            });
+            for sensor in readings
+                .iter()
+                .filter(|sensor| sensor_group(&sensor.unique_id) == Some(choice.id))
+            {
+                if !seen.insert(sensor.unique_id.clone()) {
+                    continue;
+                }
+                list.push(SensorListItem {
+                    id: format!("sensor:{}", sensor.unique_id),
+                    name: sensor.name.clone(),
+                    name_nl: sensor.name.clone(),
+                    enabled: self.is_enabled(&format!("sensor:{}", sensor.unique_id)),
+                    updates_at_interval: sensor.update_at_interval,
+                    group_id: Some(choice.id.to_string()),
+                });
+            }
+        }
+        list
     }
 
     /// Update enabled sensors map
@@ -1018,24 +1052,99 @@ pub struct SensorListItem {
     pub name_nl: String,
     pub enabled: bool,
     pub updates_at_interval: bool,
+    pub group_id: Option<String>,
+}
+
+fn sensor_group(id: &str) -> Option<&'static str> {
+    if let Some(choice) = catalog::SENSOR_CHOICES
+        .iter()
+        .find(|choice| choice.id == id)
+    {
+        return Some(choice.id);
+    }
+    if id.starts_with("disk_usage") {
+        Some("disk_usage")
+    } else if id.starts_with("gpu_") {
+        Some("gpu")
+    } else if id.starts_with("network_") {
+        Some("network")
+    } else if id.starts_with("battery_") {
+        Some("battery")
+    } else if id.starts_with("display_resolution") {
+        Some("display")
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn sensor_choices_keep_ids_and_localized_labels() {
-        let collector = SensorCollector::new(&HashMap::new(), &HashMap::new(), &HashMap::new());
-        let choices = collector.get_sensor_list();
-        assert_eq!(choices.len(), 23);
+    #[tokio::test]
+    async fn sensor_choices_keep_ids_and_localized_labels() {
+        let (choices, readings) = tokio::task::spawn_blocking(|| {
+            let mut collector =
+                SensorCollector::new(&HashMap::new(), &HashMap::new(), &HashMap::new());
+            (collector.get_sensor_list(), collector.collect_all())
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            choices
+                .iter()
+                .filter(|choice| choice.group_id.is_none())
+                .count(),
+            23
+        );
         assert_eq!(choices[0].id, "cpu_usage");
         assert_eq!(choices[0].name, "CPU Usage");
         assert_eq!(choices[0].name_nl, "CPU Gebruik");
         assert!(choices[0].enabled);
         assert!(choices[0].updates_at_interval);
-        assert_eq!(choices.last().unwrap().id, "display");
-        assert!(!choices.last().unwrap().updates_at_interval);
+        let display = choices
+            .iter()
+            .find(|choice| choice.id == "display")
+            .unwrap();
+        assert!(!display.updates_at_interval);
+        assert!(choices.iter().any(|choice| choice.id == "sensor:cpu_usage"));
+        for reading in readings {
+            assert!(
+                sensor_group(&reading.unique_id).is_some(),
+                "unlisted reading: {}",
+                reading.unique_id
+            );
+            assert!(choices
+                .iter()
+                .any(|choice| choice.id == format!("sensor:{}", reading.unique_id)));
+        }
+    }
+
+    #[tokio::test]
+    async fn individual_reading_preferences_do_not_change_group_preferences() {
+        tokio::task::spawn_blocking(|| {
+            let preferences = HashMap::from([("sensor:cpu_usage".to_string(), false)]);
+            let mut collector =
+                SensorCollector::new(&preferences, &HashMap::new(), &HashMap::new());
+            assert!(collector.is_enabled("cpu_usage"));
+            assert!(!collector.is_enabled("sensor:cpu_usage"));
+            let readings = collector.collect_dynamic();
+            assert!(!readings
+                .iter()
+                .any(|sensor| sensor.unique_id == "cpu_usage"));
+            let choices = collector.get_sensor_list();
+            assert!(
+                !choices
+                    .iter()
+                    .find(|choice| choice.id == "sensor:cpu_usage")
+                    .unwrap()
+                    .enabled
+            );
+        })
+        .await
+        .unwrap();
+        assert_eq!(sensor_group("gpu_temperature_stable_1"), Some("gpu"));
+        assert_eq!(sensor_group("display_resolution"), Some("display"));
     }
 
     #[test]

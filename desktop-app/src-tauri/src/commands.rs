@@ -341,8 +341,19 @@ pub(crate) async fn register_device_inner(
 pub async fn get_sensor_list(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<SensorListItem>, String> {
-    let collector = state.collector.lock().await;
-    Ok(collector.get_sensor_list())
+    let worker_state = state.inner().clone();
+    let (choices, identities) = tokio::task::spawn_blocking(move || {
+        let mut collector = worker_state.collector.blocking_lock();
+        let choices = collector.get_sensor_list();
+        (choices, collector.identity_map())
+    })
+    .await
+    .map_err(|error| format!("Sensor discovery worker failed: {error}"))?;
+    let mut settings = state.settings.lock().await;
+    if settings.sensor_identity_map != identities {
+        settings.save_identity_map(&state.app_handle, identities)?;
+    }
+    Ok(choices)
 }
 
 /// Force immediate sensor update
@@ -624,6 +635,13 @@ pub fn open_dashboard_view<R: tauri::Runtime, M: Manager<R>>(
             }} catch(e) {{
                 console.warn("[HA Companion] Failed to inject hassTokens:", e);
             }}
+        }})();
+        (function() {{
+            if (window.top !== window.self || location.origin !== {escaped_origin}) return;
+            window.addEventListener("contextmenu", function(event) {{
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }}, true);
         }})();
         "#
     );

@@ -163,17 +163,31 @@ async function populateSensorList() {
         const container = document.getElementById("sensor-list");
         container.removeAttribute("role");
         container.innerHTML = "";
+        const groupCheckboxes = new Map();
+        const groupReadings = new Map();
 
         for (const sensor of sensors) {
             const row = document.createElement("div");
-            row.className = "sensor-row";
+            row.className = "sensor-row " + (sensor.group_id ? "sensor-reading" : "sensor-group");
 
             const checkbox = document.createElement("input");
             checkbox.type = "checkbox";
             checkbox.id = `sensor-${sensor.id}`;
             checkbox.checked = sensor.enabled;
+            if (sensor.group_id) {
+                checkbox.disabled = !groupCheckboxes.get(sensor.group_id)?.checked;
+                if (!groupReadings.has(sensor.group_id)) groupReadings.set(sensor.group_id, []);
+                groupReadings.get(sensor.group_id).push(checkbox);
+            } else {
+                groupCheckboxes.set(sensor.id, checkbox);
+            }
             checkbox.addEventListener("change", () => {
                 pendingSensorPreferences[sensor.id] = checkbox.checked;
+                if (!sensor.group_id) {
+                    for (const reading of groupReadings.get(sensor.id) || []) {
+                        reading.disabled = !checkbox.checked;
+                    }
+                }
             });
 
             const label = document.createElement("label");
@@ -185,8 +199,12 @@ async function populateSensorList() {
                 ? (sensor.name_nl || sensor.name) : sensor.name;
 
             const badge = document.createElement("span");
-            badge.className = "sensor-badge " + (sensor.updates_at_interval ? "badge-dynamic" : "badge-static");
-            badge.textContent = sensor.updates_at_interval ? t("updates_at_interval") : t("static_sensor");
+            badge.className = "sensor-badge " + (!sensor.group_id ? "badge-group"
+                : sensor.updates_at_interval ? "badge-dynamic" : "badge-static");
+            const badgeKey = !sensor.group_id ? "sensor_group"
+                : sensor.updates_at_interval ? "updates_at_interval" : "static_sensor";
+            badge.setAttribute("data-i18n", badgeKey);
+            badge.textContent = t(badgeKey);
 
             row.appendChild(checkbox);
             row.appendChild(label);

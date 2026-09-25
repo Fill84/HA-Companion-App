@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function screen({ syncPending = false } = {}) {
+function screen({ syncPending = false, sensors = [{ id: 'gpu', name: 'GPU', enabled: true, updates_at_interval: true }] } = {}) {
     const elements = new Map();
     const calls = [];
     const alerts = [];
@@ -40,7 +40,7 @@ function screen({ syncPending = false } = {}) {
         window: { __TAURI__: { core: { invoke: async (name, args) => {
             calls.push({ name, args });
             if (name === 'get_settings') return settings;
-            if (name === 'get_sensor_list') return [{ id: 'gpu', name: 'GPU', enabled: true, updates_at_interval: true }];
+            if (name === 'get_sensor_list') return sensors;
             if (name === 'save_settings') return { sensor_sync_pending: syncPending };
         } } } },
     });
@@ -65,6 +65,27 @@ test('sensor choice is staged until Save and discarded by Cancel', async () => {
     await ui.context.saveSettings();
     const saved = ui.calls.find(call => call.name === 'save_settings');
     assert.equal(saved.args.enabledSensors.gpu, false);
+});
+
+test('each discovered reading can be disabled without disabling its group', async () => {
+    const ui = screen({ sensors: [
+        { id: 'gpu', name: 'GPU Sensors', enabled: true, updates_at_interval: true },
+        { id: 'sensor:gpu_temperature', name: 'GPU Temperature', enabled: true,
+            updates_at_interval: true, group_id: 'gpu' },
+    ] });
+    await ui.context.openSettings();
+    const [group, reading] = ui.document.getElementById('sensor-list').children;
+    assert.equal(reading.children[0].disabled, false);
+    reading.children[0].checked = false;
+    reading.children[0].listeners.change();
+    await ui.context.saveSettings();
+    const saved = ui.calls.find(call => call.name === 'save_settings').args.enabledSensors;
+    assert.equal(saved.gpu, true);
+    assert.equal(saved['sensor:gpu_temperature'], false);
+
+    group.children[0].checked = false;
+    group.children[0].listeners.change();
+    assert.equal(reading.children[0].disabled, true);
 });
 
 test('saved preferences with pending HA sync report saved state accurately', async () => {

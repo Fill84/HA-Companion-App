@@ -91,7 +91,7 @@
                     <h3 data-i18n="general">General</h3>
                     <div class="form-group">
                         <label for="settings-interval" data-i18n="update_interval">Update Interval (seconds)</label>
-                        <input type="number" id="settings-interval" min="10" max="3600" value="60">
+                        <input type="number" id="settings-interval" min="5" max="3600" value="60">
                     </div>
                     <div class="form-group">
                         <label for="settings-language" data-i18n="language">Language</label>
@@ -108,6 +108,7 @@
 
                 <div class="settings-section">
                     <h3 data-i18n="sensors">Sensors</h3>
+                    <p class="sensor-help" data-i18n="sensor_selection_help">Choose a group, then choose which discovered readings to send to Home Assistant.</p>
                     <div id="sensor-list" class="sensor-list">
                         <!-- Populated dynamically -->
                     </div>
