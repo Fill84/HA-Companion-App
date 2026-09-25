@@ -1,0 +1,17 @@
+# Publieke Windows-codeondertekening
+
+De Windows-releasepoort controleert vóór publicatie de Authenticode-handtekening van **zowel** `ha-companion.exe` als de NSIS-installer. De huidige lokale 1.0.5-kandidaat is `NotSigned` en mag deze poort niet passeren. De meegeleverde PawnIO-driver heeft een eigen geldige leveranciershandtekening; dat ondertekent de desktopapp of installer niet.
+
+Een zelfondertekend certificaat is geschikt voor een lokale proef, maar wordt op andere Windows-pc's niet standaard vertrouwd. Het aangetroffen WDK-testcertificaat is daarom geen publiek releasecertificaat. Voor publieke distributie moet de geregistreerde uitgever door een vertrouwde certificaatverstrekker worden gevalideerd.
+
+## Voorgestelde route voor de geregistreerde onderneming
+
+[Microsoft Artifact Signing Public Trust](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart) ondersteunt organisaties in de EU. De getoonde Azure-login heeft op dit moment **geen abonnement**. Volgens [Microsofts FAQ](https://learn.microsoft.com/en-us/azure/artifact-signing/faq) werkt de dienst niet met een gratis, proef- of gesponsord abonnement; een betaald abonnement is vereist. [Basic kost volgens Microsoft $9,99 per account per maand](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-change-sku), exclusief eventuele belastingen en overgebruik. Maak geen betaalde resource zonder een expliciete keuze van de accounteigenaar.
+
+De accounteigenaar moet in de eigen Azure-portal de betaalmethode/het betaalde abonnement en de organisatie-identiteitscontrole afronden. Deel geen betaalgegevens, identiteitsdocumenten, wachtwoorden of tokens via deze repository of chat. Daarna zijn voor de technische koppeling nodig: de Artifact Signing-endpoint-URL, accountnaam, `PublicTrust`-certificaatprofielnaam, tenant-ID en een signing-identiteit met de rol `Artifact Signing Certificate Profile Signer`. Deze identifiers zijn geen privésleutel; eventuele clientsecret hoort uitsluitend in CI-secrets.
+
+Na die accountstappen moet de releaseworkflow de huidige PFX-import vervangen door een [Tauri `signCommand` voor Artifact Signing](https://v2.tauri.app/distribute/sign/windows/) of een gelijkwaardige, officieel ondersteunde signer. Onderteken de app tijdens het bouwen en de installer bij bundeling, met tijdstempel. Valideer de resulterende handtekeningen op een schone Windows-runner en op een geïnstalleerde app. De al toegevoegde releasepoort weigert een ontbrekende of niet vertrouwde handtekening; zij is met de huidige ongetekende kandidaat negatief getest, maar nog niet met een echt Public Trust-profiel.
+
+Een andere vertrouwde CA is mogelijk. Een moderne organisatiecodecertificaataanvraag vereist eveneens validatie en hardwarebeschermde sleutelopslag; zie bijvoorbeeld de [DigiCert-productinformatie](https://www.digicert.com/nl/signing/code-signing-certificates). De bestaande PFX-secretworkflow is pas bruikbaar als de gekozen uitgever daadwerkelijk een veilig importeerbare sleutelvorm levert. Kies dus eerst de uitgever en sleutelopslag voordat de CI-koppeling definitief wordt gemaakt.
+
+Pas na een geldige ondertekende build, de resterende acceptatieproeven en de afzonderlijke HACS-upgradeproef kan de releasevolgorde uit de integratierepository worden uitgevoerd. Tot die tijd blijft versie 1.0.5 een lokale desktopkandidaat en 1.0.11 een nog niet in HACS gepubliceerde integratiekandidaat.
