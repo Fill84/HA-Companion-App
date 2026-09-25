@@ -1,8 +1,8 @@
-# Publieke Windows-codeondertekening
+# Windows-codeondertekening en releasebeleid
 
-De Windows-releasepoort controleert vóór publicatie de Authenticode-handtekening van **zowel** `ha-companion.exe` als de NSIS-installer. De huidige lokale 1.0.5-kandidaat is `NotSigned` en mag deze poort niet passeren. De meegeleverde PawnIO-driver heeft een eigen geldige leveranciershandtekening; dat ondertekent de desktopapp of installer niet.
+De Windows-releaseworkflow controleert vóór publicatie de Authenticode-status van **zowel** `ha-companion.exe` als de NSIS-installer. Beide moeten geldig ondertekend óf beide ongetekend zijn; een ongeldige of gemengde status stopt de release. De huidige lokale 1.0.5-kandidaat is `NotSigned`. De meegeleverde PawnIO-driver heeft een eigen geldige leveranciershandtekening; dat ondertekent de desktopapp of installer niet.
 
-Een zelfondertekend certificaat is geschikt voor een lokale proef, maar wordt op andere Windows-pc's niet standaard vertrouwd. Het aangetroffen WDK-testcertificaat is daarom geen publiek releasecertificaat. Voor publieke distributie moet de geregistreerde uitgever door een vertrouwde certificaatverstrekker worden gevalideerd.
+Een zelfondertekend certificaat is geschikt voor een lokale proef, maar wordt op andere Windows-pc's niet standaard vertrouwd. Het aangetroffen WDK-testcertificaat is daarom geen publiek releasecertificaat. Voor publiek vertrouwde ondertekening moet de geregistreerde uitgever door een vertrouwde certificaatverstrekker worden gevalideerd.
 
 ## SignPath Foundation: geen directe oplossing voor deze release
 
@@ -18,7 +18,7 @@ Als SignPath later alsnog wordt gekozen en het project wordt toegelaten, moet de
 
 Voor deze rechtstreeks verspreide NSIS-installer is **geen beschikbare kosteloze, publiek vertrouwde ondertekening vastgesteld**. Microsoft ondertekent MSIX-pakketten bij publicatie in de Microsoft Store, maar [MSIX ondersteunt geen installatie van Windows-drivers](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-prepare). Onze Windows-installatie levert de PawnIO-driver mee als standaardonderdeel; alleen voor gratis Store-ondertekening overstappen op MSIX voldoet daarom niet aan de huidige installatiespecificatie. Een zelfondertekend certificaat neemt de waarschuwing op andere pc's niet weg.
 
-De bestaande releasepoort blijft een geldige handtekening eisen en versie 1.0.5 blijft lokaal totdat een distributiekeuze expliciet is gemaakt. De concrete mogelijkheden zijn een publiek vertrouwde betaalde ondertekenroute, een later goedgekeurde SignPath-route, of een **bewust gekozen ongetekende distributie** met duidelijk vermelde Windows-waarschuwing, gecontroleerde herkomst en SHA-256-controle. Die laatste keuze vergt een afzonderlijke wijziging van de releasepoort en acceptatie van het beperkte vertrouwen; zij wordt niet als al genomen besluit vastgelegd.
+De gebruiker heeft op 25 september 2026 ingestemd met de Windows-waarschuwing bij distributie zonder publiek vertrouwd certificaat. Daarom is voor de komende release **ongetekende distributie** gekozen. De workflow publiceert in dat geval alleen wanneer zowel app als installer daadwerkelijk `NotSigned` zijn, legt die status vast in het manifest en vermeldt hem in de releasenotities. De SHA-256 in het manifest controleert de gedownloade bytes tegen de releasepagina, maar vervangt geen vertrouwde uitgevershandtekening. Laat gebruikers nooit een zelfondertekend rootcertificaat installeren om deze waarschuwing te verbergen. Versie 1.0.5 blijft lokaal totdat ook de andere acceptatieproeven zijn afgerond.
 
 ## Betaalde alternatieve route voor de geregistreerde onderneming
 
@@ -30,4 +30,4 @@ Na die accountstappen moet de releaseworkflow de huidige PFX-import vervangen do
 
 Een andere vertrouwde CA is mogelijk. Een moderne organisatiecodecertificaataanvraag vereist eveneens validatie en hardwarebeschermde sleutelopslag; zie bijvoorbeeld de [DigiCert-productinformatie](https://www.digicert.com/nl/signing/code-signing-certificates). De bestaande PFX-secretworkflow is pas bruikbaar als de gekozen uitgever daadwerkelijk een veilig importeerbare sleutelvorm levert. Kies dus eerst de uitgever en sleutelopslag voordat de CI-koppeling definitief wordt gemaakt.
 
-Pas na een geldige ondertekende build, de resterende acceptatieproeven en de afzonderlijke HACS-upgradeproef kan de releasevolgorde uit de integratierepository worden uitgevoerd. Tot die tijd blijft versie 1.0.5 een lokale desktopkandidaat en 1.0.11 een nog niet in HACS gepubliceerde integratiekandidaat.
+Pas na de afgesproken controle van de Windows-ondertekenstatus, de resterende acceptatieproeven en de afzonderlijke HACS-upgradeproef kan de releasevolgorde uit de integratierepository worden uitgevoerd. Tot die tijd blijft versie 1.0.5 een lokale desktopkandidaat en 1.0.11 een nog niet in HACS gepubliceerde integratiekandidaat.

@@ -130,7 +130,7 @@ jobs:
           yarn install --frozen-lockfile
           yarn tauri:build
 
-      - name: Verify Windows code signatures
+      - name: Record Windows code-signing status
         shell: pwsh
         run: |
           $exe = 'desktop-app/src-tauri/target/release/ha-companion.exe'
@@ -138,12 +138,19 @@ jobs:
           if (-not (Test-Path -LiteralPath $exe) -or $installers.Count -ne 1) {
             throw 'Expected one Windows app executable and one NSIS installer.'
           }
-          foreach ($file in @((Get-Item -LiteralPath $exe)) + $installers) {
-            $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
-            if ($signature.Status -ne 'Valid') {
-              throw "Windows artifact $($file.Name) has no valid trusted signature: $($signature.Status)"
-            }
-            Write-Host "Verified Authenticode: $($file.Name) ($($signature.SignerCertificate.Subject))"
+          $files = @((Get-Item -LiteralPath $exe)) + $installers
+          $statuses = @($files | ForEach-Object { (Get-AuthenticodeSignature -LiteralPath $_.FullName).Status.ToString() })
+          if ($statuses[0] -ne $statuses[1] -or $statuses[0] -notin @('Valid', 'NotSigned')) {
+            throw "Windows app and installer must both have valid signatures or both be unsigned: $($statuses -join ', ')"
+          }
+          $status = $statuses[0]
+          New-Item -ItemType Directory -Force -Path release-artifacts | Out-Null
+          @{ status = $status; files = @($files | ForEach-Object { $_.Name }) } |
+            ConvertTo-Json -Depth 3 | Set-Content -Encoding utf8 release-artifacts/windows-signing.json
+          if ($status -eq 'NotSigned') {
+            Write-Warning 'Windows app and installer are unsigned. The release notes must disclose this.'
+          } else {
+            Write-Host 'Windows app and installer have valid Authenticode signatures.'
           }
 
       - name: Stage Windows Artifacts
@@ -363,6 +370,9 @@ jobs:
           from zipfile import ZipFile
 
           roots = ['windows-installers', 'macos-installers', 'linux-installers', 'ha-integration']
+          signing = json.loads(Path('windows-installers/windows-signing.json').read_text(encoding='utf-8-sig'))
+          if signing['status'] not in ('Valid', 'NotSigned') or len(signing['files']) != 2:
+              raise SystemExit('Windows signing status is invalid or incomplete')
           artifacts = {}
           for root in roots:
               for path in sorted(Path(root).rglob('*')):
@@ -383,15 +393,33 @@ jobs:
               'integration_version': integration_version,
               'desktop_commit': os.environ['DESKTOP_COMMIT'],
               'integration_commit': os.environ['INTEGRATION_COMMIT'],
+              'windows_authenticode_status': signing['status'],
               'artifacts_sha256': artifacts,
           }
           Path('release-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          if signing['status'] == 'NotSigned':
+              windows_note = (
+                  'De Windows-app en -installer zijn niet Authenticode-ondertekend. '
+                  'Windows kan daarom Onbekende uitgever of een SmartScreen-waarschuwing tonen. '
+                  'Download uitsluitend vanaf deze releasepagina en vergelijk de SHA-256 van het '
+                  'bestand met release-manifest.json. De meegeleverde PawnIO-driver heeft een '
+                  'afzonderlijke handtekening van zijn leverancier.'
+              )
+          else:
+              windows_note = 'De Windows-app en -installer hebben geldige Authenticode-handtekeningen.'
+          Path('release-notes.md').write_text(
+              f'## Windows-installatie\n\n{windows_note}\n\n'
+              'De broncommits en SHA-256-controlesommen voor alle downloads staan in '
+              '`release-manifest.json`.\n', encoding='utf-8'
+          )
           PY
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.version.outputs.version }}
           target_commitish: ${{ github.sha }}
+          body_path: release-notes.md
+          fail_on_unmatched_files: true
           # Source files (package.json etc.) are the source of truth, so the
           # workflow no longer pushes a "chore: set version" commit back to
           # main. Bump the version in your release commit; the workflow tags
@@ -403,6 +431,7 @@ jobs:
             linux-installers/rpm/*.rpm
             linux-installers/appimage/*.AppImage
             ha-integration/ha-integration.zip
+            windows-installers/windows-signing.json
             release-manifest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

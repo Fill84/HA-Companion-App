@@ -21,6 +21,7 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
 
 ### Desktop App
 1. Download een **gepubliceerde en geteste** release voor jouw platform van [GitHub Releases](https://github.com/Fill84/HA-Companion-App/releases). De volgende releasekandidaat wordt 1.0.5; hij is nog niet gepubliceerd. Controleer versie en SHA-256 tegen het release-manifest. Een lokaal `target/`-bestand is geen actuele publieke release.
+   De komende Windows-installer is naar verwachting ongetekend. Windows kan `Onbekende uitgever` of een SmartScreen-waarschuwing tonen; de meegeleverde driver heeft wel een eigen leveranciershandtekening. Controleer de exacte release en de SHA-256 voordat je de installer uitvoert.
 2. Installeer de app en start deze
 3. Vul je Home Assistant server URL en Long-Lived Access Token in bij de eerste setup
 4. De app registreert automatisch je device en sensors in Home Assistant. Op Windows installeert onze installer de meegeleverde, ondertekende PawnIO-driver en onze eigen Rust-sensorservice standaard als onderdeel van de app. Een aparte sensorapp of extra schakelaar is niet nodig.
@@ -41,7 +42,7 @@ Het toegangstoken wordt in de Windows Credential Manager, macOS Keychain of een 
 Lees de [volledige installatie-, upgrade-, dashboard- en herstelgids](https://github.com/Fill84/ha-integration/blob/main/docs/INSTALLATION.md) voordat je een bestaande installatie bijwerkt. Eerst de HA-integratie bijwerken en HA volledig herstarten, daarna de bijbehorende desktopversie installeren. HACS leest de afzonderlijke `ha-integration`-repository; een desktoprelease alleen levert geen HACS-update. De lokale integratieversie 1.0.11 is nog geen gepubliceerde HACS-release. Bestaande entity-ID's en automatiseringen moeten bij de upgrade behouden blijven.
 
 ## Bouw en releasecontrole
-Voor een publieke Windows-release moeten zowel de appbinary als de NSIS-installer een vertrouwde handtekening hebben. De huidige lokale kandidaat is nog ongetekend; de benodigde account- en CI-stappen staan in [Publieke Windows-codeondertekening](docs/RELEASE_SIGNING.md).
+De Windows-releaseworkflow controleert dat appbinary en NSIS-installer allebei geldig ondertekend of allebei ongetekend zijn. De gebruiker heeft distributie zonder publiek vertrouwde handtekening met zichtbare Windows-waarschuwing toegestaan. De status staat in het release-manifest en de releasenotities; zie [Windows-codeondertekening en releasebeleid](docs/RELEASE_SIGNING.md). Andere openstaande acceptatieproeven blijven voorwaarden voor publicatie.
 
 De desktop gebruikt Yarn 1.22.22 met één `yarn.lock`; een schone installatie is `cd desktop-app && corepack yarn install --frozen-lockfile`. Pull requests en pushes naar `main` draaien de desktopverificatie. Een release start uitsluitend via `workflow_dispatch` op `main` met de volledige, gepushte 40-tekens commit-SHA uit de afzonderlijke `Fill84/ha-integration`-repository. `package.json`, `Cargo.toml` en `tauri.conf.json` moeten dezelfde desktopversie bevatten; de release bevat een manifest met beide broncommits en SHA-256-hashes van alle artifacts. De daadwerkelijke platform-, installer- en HA-compatibiliteitsproeven zijn nog releasevoorwaarden. Zie de [uitvoeringsstatus](docs/plans/2026-09-24-verificatiestatus.md).
 
