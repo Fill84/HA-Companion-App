@@ -130,6 +130,22 @@ jobs:
           yarn install --frozen-lockfile
           yarn tauri:build
 
+      - name: Verify Windows code signatures
+        shell: pwsh
+        run: |
+          $exe = 'desktop-app/src-tauri/target/release/ha-companion.exe'
+          $installers = @(Get-ChildItem 'desktop-app/src-tauri/target/release/bundle/nsis' -Filter '*.exe' -File)
+          if (-not (Test-Path -LiteralPath $exe) -or $installers.Count -ne 1) {
+            throw 'Expected one Windows app executable and one NSIS installer.'
+          }
+          foreach ($file in @((Get-Item -LiteralPath $exe)) + $installers) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
+            if ($signature.Status -ne 'Valid') {
+              throw "Windows artifact $($file.Name) has no valid trusted signature: $($signature.Status)"
+            }
+            Write-Host "Verified Authenticode: $($file.Name) ($($signature.SignerCertificate.Subject))"
+          }
+
       - name: Stage Windows Artifacts
         shell: pwsh
         run: |
