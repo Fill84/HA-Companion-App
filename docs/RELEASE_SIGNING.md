@@ -4,7 +4,15 @@ De Windows-releasepoort controleert vóór publicatie de Authenticode-handtekeni
 
 Een zelfondertekend certificaat is geschikt voor een lokale proef, maar wordt op andere Windows-pc's niet standaard vertrouwd. Het aangetroffen WDK-testcertificaat is daarom geen publiek releasecertificaat. Voor publieke distributie moet de geregistreerde uitgever door een vertrouwde certificaatverstrekker worden gevalideerd.
 
-## Voorgestelde route voor de geregistreerde onderneming
+## Gratis open-sourceroute: SignPath Foundation
+
+[SignPath Foundation](https://signpath.org/) biedt kosteloos publiek vertrouwde Authenticode-ondertekening voor geaccepteerde open-sourceprojecten. De handtekening vermeldt **SignPath Foundation** als uitgever, niet de naam van onze onderneming. Toelating is niet gegarandeerd: SignPath beoordeelt onder andere de projectreputatie, broncode, licenties, documentatie en releasegeschiedenis. De desktoprepository is MIT-gelicentieerd en heeft een publieke Windows-release; de meegeleverde OSS-componenten en hun licenties staan in de [componenteninventaris](specs/2026-09-24-third-party-components.md).
+
+De [OSS-voorwaarden](https://signpath.org/terms.html) vragen onder meer een openbare code-signing policy en privacyinformatie, MFA voor beheerders, een controleerbare build uit openbare broncode, rollen voor auteurs/reviewers/goedkeurders en handmatige goedkeuring per release. SignPath staat toe dat een ondertekend pakket een upstream-OSS-binary bevat; onze meegeleverde PawnIO-driver mag niet als eigen binary opnieuw door SignPath worden ondertekend. Voor de [GitHub-koppeling](https://docs.signpath.io/trusted-build-systems/github) moeten alle jobs vóór het signingverzoek op GitHub-hosted runners draaien. De private Forgejo-CI blijft nuttig voor ontwikkeling, maar levert op zichzelf geen door SignPath vertrouwde releaseherkomst.
+
+De Tauri-releasebuild moet worden opgesplitst in `build --no-bundle`, een SignPath-verzoek voor `ha-companion.exe`, `bundle` met die ondertekende app, en een tweede SignPath-verzoek voor de NSIS-installer. [Tauri ondersteunt een gescheiden build- en bundelstap](https://v2.tauri.app/distribute/). Daarna controleert de bestaande Authenticode-poort beide bestanden. Deze workflow kan pas met echte SignPath-projectgegevens en een geaccepteerde aanvraag end-to-end worden gevalideerd; de huidige workflow is nog op een eigen PFX-certificaat ingericht. Publiceer geen ongetekende release als de aanvraag wordt afgewezen.
+
+## Betaalde alternatieve route voor de geregistreerde onderneming
 
 [Microsoft Artifact Signing Public Trust](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart) ondersteunt organisaties in de EU. De getoonde Azure-login heeft op dit moment **geen abonnement**. Volgens [Microsofts FAQ](https://learn.microsoft.com/en-us/azure/artifact-signing/faq) werkt de dienst niet met een gratis, proef- of gesponsord abonnement; een betaald abonnement is vereist. [Basic kost volgens Microsoft $9,99 per account per maand](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-change-sku), exclusief eventuele belastingen en overgebruik. Maak geen betaalde resource zonder een expliciete keuze van de accounteigenaar.
 
