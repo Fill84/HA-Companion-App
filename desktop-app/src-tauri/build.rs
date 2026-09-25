@@ -8,6 +8,7 @@ fn main() {
             "reregister_device",
             "check_connection",
             "get_sensor_list",
+            "get_sensor_diagnostics",
             "update_sensors_now",
             "toggle_sensor",
             "get_current_language",

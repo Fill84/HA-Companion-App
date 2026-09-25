@@ -20,6 +20,7 @@ mod shutdown_hook;
 use commands::{mark_unregistered, *};
 use ha_client::{HaClient, RegistrationRequest};
 use sensors::collector::{SensorCollector, SensorValue};
+use sensors::diagnostics::SensorDiagnostics;
 use settings::AppSettings;
 
 /// Shared application state
@@ -29,6 +30,7 @@ pub struct AppState {
     pub settings: Mutex<AppSettings>,
     pub ha_client: Mutex<HaClient>,
     pub collector: Mutex<SensorCollector>,
+    pub diagnostics: Mutex<SensorDiagnostics>,
     pub registration_lock: Mutex<()>,
     pub shutting_down: AtomicBool,
 }
@@ -83,6 +85,13 @@ pub async fn collect_snapshot(
     if settings.sensor_identity_map != identities {
         settings.save_identity_map(&state.app_handle, identities)?;
     }
+    let preferences = settings.enabled_sensors.clone();
+    drop(settings);
+    state
+        .diagnostics
+        .lock()
+        .await
+        .record_snapshot(&sensors, full, &preferences);
     Ok(sensors)
 }
 
@@ -172,6 +181,7 @@ pub fn run(dev_mode: bool) {
                 settings: Mutex::new(app_settings.clone()),
                 ha_client: Mutex::new(ha_client),
                 collector: Mutex::new(collector),
+                diagnostics: Mutex::new(SensorDiagnostics::default()),
                 registration_lock: Mutex::new(()),
                 shutting_down: AtomicBool::new(false),
             });
@@ -300,6 +310,7 @@ pub fn run(dev_mode: bool) {
             reregister_device,
             check_connection,
             get_sensor_list,
+            get_sensor_diagnostics,
             update_sensors_now,
             toggle_sensor,
             get_current_language,
@@ -434,6 +445,12 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                         if is_webhook_dead(&err_str) {
                             mark_unregistered(&state, &handle, &failed_webhook, &err_str).await;
                         }
+                    } else {
+                        state
+                            .diagnostics
+                            .lock()
+                            .await
+                            .record_ha_ack(&all_sensors, true);
                     }
                 }
             } else {
@@ -462,6 +479,12 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
                     if is_webhook_dead(&err_str) {
                         mark_unregistered(&state, &handle, &failed_webhook, &err_str).await;
                     }
+                } else {
+                    state
+                        .diagnostics
+                        .lock()
+                        .await
+                        .record_ha_ack(&sensor_data, false);
                 }
             }
 

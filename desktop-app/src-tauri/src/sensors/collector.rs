@@ -1055,7 +1055,7 @@ pub struct SensorListItem {
     pub group_id: Option<String>,
 }
 
-fn sensor_group(id: &str) -> Option<&'static str> {
+pub(crate) fn sensor_group(id: &str) -> Option<&'static str> {
     if let Some(choice) = catalog::SENSOR_CHOICES
         .iter()
         .find(|choice| choice.id == id)

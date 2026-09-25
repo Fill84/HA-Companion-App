@@ -6,6 +6,9 @@ let currentSettings = null;
 let pendingSensorPreferences = {};
 let settingsFocusReturn = null;
 let versionRequestId = 0;
+let diagnosticsTimer = null;
+let diagnosticsRequestId = 0;
+let diagnosticRows = new Map();
 
 async function refreshSettingsVersions(settings) {
     const requestId = ++versionRequestId;
@@ -33,6 +36,9 @@ async function refreshSettingsVersions(settings) {
  */
 async function openSettings() {
     settingsFocusReturn = document.activeElement;
+    if (diagnosticsTimer !== null) window.clearInterval?.(diagnosticsTimer);
+    diagnosticsTimer = null;
+    diagnosticsRequestId++;
     document.getElementById("settings-save").disabled = false;
     try {
         currentSettings = await window.__TAURI__.core.invoke("get_settings");
@@ -72,6 +78,8 @@ async function openSettings() {
         document.getElementById("settings-overlay").classList.remove("hidden");
         document.getElementById("settings-close").focus?.();
         void refreshSettingsVersions(currentSettings);
+        void refreshSensorDiagnostics();
+        diagnosticsTimer = window.setInterval?.(() => void refreshSensorDiagnostics(), 10000) || null;
     } catch (err) {
         console.error("Failed to load settings:", err);
         document.getElementById("settings-save").disabled = true;
@@ -103,6 +111,9 @@ async function closeSettings() {
         }
     }
     versionRequestId++;
+    diagnosticsRequestId++;
+    if (diagnosticsTimer !== null) window.clearInterval?.(diagnosticsTimer);
+    diagnosticsTimer = null;
     document.getElementById("settings-overlay").classList.add("hidden");
     settingsFocusReturn?.focus?.();
     settingsFocusReturn = null;
@@ -158,6 +169,7 @@ async function saveSettings() {
  * Populate sensor list with checkboxes
  */
 async function populateSensorList() {
+    diagnosticRows = new Map();
     try {
         const sensors = await window.__TAURI__.core.invoke("get_sensor_list");
         const container = document.getElementById("sensor-list");
@@ -201,6 +213,7 @@ async function populateSensorList() {
                         reading.disabled = !checkbox.checked;
                     }
                 }
+                void refreshSensorDiagnostics();
             });
 
             const label = document.createElement("label");
@@ -225,6 +238,18 @@ async function populateSensorList() {
             row.appendChild(checkbox);
             row.appendChild(label);
             row.appendChild(badge);
+            if (displayed.id.startsWith("sensor:")) {
+                const details = document.createElement("details");
+                details.className = "sensor-diagnostics";
+                const summary = document.createElement("summary");
+                summary.textContent = t("sensor_diagnostics");
+                details.appendChild(summary);
+                const body = document.createElement("div");
+                body.className = "sensor-diagnostics-body";
+                details.appendChild(body);
+                row.appendChild(details);
+                diagnosticRows.set(displayed.id.slice(7), { body, checkbox });
+            }
             container.appendChild(row);
         }
     } catch (err) {
@@ -232,6 +257,69 @@ async function populateSensorList() {
         const container = document.getElementById("sensor-list");
         container.textContent = t("sensor_list_failed");
         container.setAttribute("role", "alert");
+    }
+}
+
+function diagnosticReason(reason) {
+    const known = new Set(["not_emitted", "provider_error", "provider_unavailable",
+        "provider_timeout", "incompatible_provider", "driver_unavailable", "unsupported", "disabled",
+        "invalid_response"]);
+    return t(`diagnostic_reason_${known.has(reason) ? reason : "no_value"}`);
+}
+
+function diagnosticTime(value) {
+    if (!value) return t("diagnostic_never");
+    return new Intl.DateTimeFormat(typeof currentLanguage !== "undefined" && currentLanguage === "nl" ? "nl-NL" : "en-US", {
+        dateStyle: "short", timeStyle: "medium",
+    }).format(new Date(value));
+}
+
+function renderSensorDiagnostic(body, record, disabled) {
+    body.innerHTML = "";
+    const add = (label, value) => {
+        const line = document.createElement("div");
+        line.className = "sensor-diagnostic-line";
+        const title = document.createElement("span");
+        title.textContent = t(label);
+        const content = document.createElement("span");
+        content.textContent = value;
+        line.appendChild(title);
+        line.appendChild(content);
+        body.appendChild(line);
+    };
+    const present = record?.current_value != null;
+    const unit = record?.unit ? ` ${record.unit}` : "";
+    add("diagnostic_current", disabled ? t("diagnostic_disabled")
+        : present ? `${record.current_value}${unit}` : t("diagnostic_unknown"));
+    add("diagnostic_last_value", record?.last_value != null
+        ? `${record.last_value}${unit}` : t("diagnostic_never"));
+    add("diagnostic_source", record?.source || t("diagnostic_not_reported"));
+    add("diagnostic_last_read", diagnosticTime(record?.last_successful_read_at));
+    add("diagnostic_ha_ack", diagnosticTime(record?.last_ha_ack_at));
+    let reason = disabled ? t("diagnostic_disabled") : record?.reason
+        ? diagnosticReason(record.reason) : !record ? t("diagnostic_waiting") : null;
+    if (!disabled && record?.last_read_at && (!record.last_ha_ack_at
+        || record.last_read_at > record.last_ha_ack_at)) {
+        reason = reason ? `${reason} · ${t("diagnostic_sync_pending")}` : t("diagnostic_sync_pending");
+    }
+    if (reason) add("diagnostic_status", reason);
+}
+
+async function refreshSensorDiagnostics() {
+    const requestId = ++diagnosticsRequestId;
+    try {
+        const diagnostics = await window.__TAURI__.core.invoke("get_sensor_diagnostics");
+        if (requestId !== diagnosticsRequestId) return;
+        for (const [id, row] of diagnosticRows) {
+            const disabled = !row.checkbox.checked || row.checkbox.disabled;
+            renderSensorDiagnostic(row.body, diagnostics?.[id], disabled);
+        }
+    } catch (error) {
+        if (requestId !== diagnosticsRequestId) return;
+        console.error("Failed to load sensor diagnostics:", error);
+        for (const row of diagnosticRows.values()) {
+            row.body.textContent = t("diagnostic_unavailable");
+        }
     }
 }
 

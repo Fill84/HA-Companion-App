@@ -13,6 +13,7 @@
     "allow-reregister-device",
     "allow-check-connection",
     "allow-get-sensor-list",
+    "allow-get-sensor-diagnostics",
     "allow-update-sensors-now",
     "allow-toggle-sensor",
     "allow-get-current-language",

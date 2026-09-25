@@ -201,6 +201,12 @@
           "markdownDescription": "Enables the get_my_public_ip command without any pre-configured scope."
         },
         {
+          "description": "Enables the get_sensor_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-sensor-diagnostics",
+          "markdownDescription": "Enables the get_sensor_diagnostics command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_sensor_list command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-sensor-list",
@@ -277,6 +283,12 @@
           "type": "string",
           "const": "deny-get-my-public-ip",
           "markdownDescription": "Denies the get_my_public_ip command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_sensor_diagnostics command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-sensor-diagnostics",
+          "markdownDescription": "Denies the get_sensor_diagnostics command without any pre-configured scope."
         },
         {
           "description": "Denies the get_sensor_list command without any pre-configured scope.",

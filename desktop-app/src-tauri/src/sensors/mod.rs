@@ -2,6 +2,7 @@ pub mod battery;
 pub mod catalog;
 pub mod collector;
 pub mod cpu;
+pub mod diagnostics;
 pub mod disk;
 pub mod gpu;
 pub mod memory;

@@ -623,6 +623,7 @@ body {
 
 .sensor-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--ha-space-3);
     padding: 10px var(--ha-space-2);
@@ -678,6 +679,38 @@ body {
     flex-shrink: 0;
     font-weight: 500;
     letter-spacing: 0.2px;
+}
+
+.sensor-diagnostics {
+    flex-basis: 100%;
+    min-width: 0;
+    margin-left: 30px;
+    color: var(--ha-text-secondary);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.sensor-diagnostics summary {
+    cursor: pointer;
+    width: fit-content;
+    color: var(--ha-primary);
+    padding: 2px 0;
+}
+
+.sensor-diagnostics-body {
+    padding: 6px 0 4px;
+}
+
+.sensor-diagnostic-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 2px 0;
+}
+
+.sensor-diagnostic-line span:last-child {
+    text-align: right;
+    overflow-wrap: anywhere;
 }
 
 .badge-dynamic {

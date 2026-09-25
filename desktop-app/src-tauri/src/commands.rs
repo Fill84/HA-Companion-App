@@ -243,6 +243,8 @@ async fn sync_all_sensors(state: Arc<AppState>, app: &tauri::AppHandle) -> Resul
         ));
     }
     client.remember_registered_sensors(&sensors);
+    drop(client);
+    state.diagnostics.lock().await.record_ha_ack(&sensors, true);
     Ok(())
 }
 
@@ -262,8 +264,11 @@ fn resolve_access_token(
 
 #[cfg(test)]
 mod settings_contract_tests {
-    use super::{integration_version_from_response, resolve_access_token};
+    use super::{integration_version_from_response, merge_known_readings, resolve_access_token};
+    use crate::sensors::collector::SensorListItem;
+    use crate::sensors::diagnostics::ReadingDiagnostic;
     use crate::settings::AppSettings;
+    use std::collections::HashMap;
 
     #[test]
     fn integration_version_requires_a_safe_version_string() {
@@ -302,6 +307,38 @@ mod settings_contract_tests {
             "new-secret"
         );
     }
+
+    #[test]
+    fn previously_seen_missing_reading_remains_selectable() {
+        let group = SensorListItem {
+            id: "gpu".into(),
+            name: "GPU".into(),
+            name_nl: "GPU".into(),
+            enabled: true,
+            updates_at_interval: true,
+            group_id: None,
+        };
+        let known = HashMap::from([(
+            "gpu_temperature".into(),
+            ReadingDiagnostic {
+                name: "GPU Temperature".into(),
+                current_value: None,
+                last_value: Some("45".into()),
+                unit: Some("°C".into()),
+                source: Some("GPU collector".into()),
+                last_read_at: 1,
+                last_successful_read_at: Some(1),
+                last_ha_ack_at: None,
+                reason: Some("not_emitted".into()),
+                updates_at_interval: true,
+            },
+        )]);
+        let preferences = HashMap::from([("sensor:gpu_temperature".into(), false)]);
+        let result = merge_known_readings(vec![group], &preferences, known);
+        assert_eq!(result[1].id, "sensor:gpu_temperature");
+        assert_eq!(result[1].group_id.as_deref(), Some("gpu"));
+        assert!(!result[1].enabled);
+    }
 }
 
 /// Register device with HA
@@ -333,6 +370,13 @@ pub(crate) async fn register_device_inner(
         }
     };
 
+    drop(ha_client);
+    drop(settings);
+    state
+        .diagnostics
+        .lock()
+        .await
+        .record_ha_ack(&all_sensors, true);
     Ok(())
 }
 
@@ -353,7 +397,51 @@ pub async fn get_sensor_list(
     if settings.sensor_identity_map != identities {
         settings.save_identity_map(&state.app_handle, identities)?;
     }
-    Ok(choices)
+    let preferences = settings.enabled_sensors.clone();
+    drop(settings);
+    let known = state.diagnostics.lock().await.snapshot();
+    Ok(merge_known_readings(choices, &preferences, known))
+}
+
+fn merge_known_readings(
+    mut choices: Vec<SensorListItem>,
+    preferences: &HashMap<String, bool>,
+    known: HashMap<String, crate::sensors::diagnostics::ReadingDiagnostic>,
+) -> Vec<SensorListItem> {
+    for (id, diagnostic) in known {
+        let Some(group) = crate::sensors::collector::sensor_group(&id) else {
+            continue;
+        };
+        let choice_id = format!("sensor:{id}");
+        if choices.iter().any(|choice| choice.id == choice_id) {
+            continue;
+        }
+        let insert_at = choices
+            .iter()
+            .rposition(|choice| choice.group_id.as_deref() == Some(group) || choice.id == group)
+            .map_or(choices.len(), |position| position + 1);
+        choices.insert(
+            insert_at,
+            SensorListItem {
+                id: choice_id.clone(),
+                name: diagnostic.name.clone(),
+                name_nl: diagnostic.name,
+                enabled: *preferences.get(&choice_id).unwrap_or(&true),
+                updates_at_interval: diagnostic.updates_at_interval,
+                group_id: Some(group.to_owned()),
+            },
+        );
+    }
+    choices
+}
+
+/// Return cached observations. This never polls hardware or Home Assistant.
+#[tauri::command]
+pub async fn get_sensor_diagnostics(
+    state: State<'_, Arc<AppState>>,
+) -> Result<std::collections::HashMap<String, crate::sensors::diagnostics::ReadingDiagnostic>, String>
+{
+    Ok(state.diagnostics.lock().await.snapshot())
 }
 
 /// Force immediate sensor update
@@ -385,6 +473,12 @@ pub async fn update_sensors_now(
         return Err(format!("Update failed: {}", err_str));
     }
 
+    drop(ha_client);
+    state
+        .diagnostics
+        .lock()
+        .await
+        .record_ha_ack(&sensor_data, false);
     Ok(())
 }
 

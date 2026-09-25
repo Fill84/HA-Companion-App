@@ -75,6 +75,8 @@ De app bevat geen WinRing0-driver. Op Windows installeert onze NSIS-installer st
 
 De collector levert één snapshot per meetronde en hergebruikt de basis-systeemmetingen. Zie de [geïntegreerde sensorspecificatie](docs/specs/2026-09-24-integrated-sensors.md), het [uitvoeringsplan](docs/plans/2026-09-24-integrated-sensors.md) en de [sensor-supportmatrix](docs/specs/2026-09-24-sensor-support.md). Bestaande WinRing0-services worden niet automatisch verwijderd; een upgrade van een oude installatie vraagt nog migratievalidatie.
 
+In Instellingen kun je bij iedere gevonden meting **Diagnose** openen. Daar staan de huidige en de laatste geldige waarde, de laatst bekende meetbron, de tijd van de laatste geldige lokale uitlezing en de laatste door Home Assistant bevestigde verzending. Bij een onbekende waarde toont de app de beschikbare providerfout of meldt hij eerlijk dat een verdwenen onderdeel niet van ontbrekende ondersteuning te onderscheiden is. Eerder gevonden metingen blijven tijdens de huidige appsessie zichtbaar als de hardware tijdelijk verdwijnt. Deze diagnosegeschiedenis staat alleen in het geheugen en begint na een herstart opnieuw; de bestaande HA-sensor-ID's en meetwaarden veranderen hierdoor niet.
+
 ## License
 Zie LICENSE.md voor licentievoorwaarden.
 

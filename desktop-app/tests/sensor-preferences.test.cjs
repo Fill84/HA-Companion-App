@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function screen({ syncPending = false, sensors = [{ id: 'gpu', name: 'GPU', enabled: true, updates_at_interval: true }] } = {}) {
+function screen({ syncPending = false, diagnostics = {}, sensors = [{ id: 'gpu', name: 'GPU', enabled: true, updates_at_interval: true }] } = {}) {
     const elements = new Map();
     const calls = [];
     const alerts = [];
@@ -42,6 +42,7 @@ function screen({ syncPending = false, sensors = [{ id: 'gpu', name: 'GPU', enab
             calls.push({ name, args });
             if (name === 'get_settings') return settings;
             if (name === 'get_sensor_list') return sensors;
+            if (name === 'get_sensor_diagnostics') return diagnostics;
             if (name === 'save_settings') return { sensor_sync_pending: syncPending };
         } } } },
     });
@@ -59,6 +60,30 @@ test('local context menu is suppressed and clicking outside Settings keeps it op
     overlay.listeners.click?.({ target: overlay });
     assert.equal(overlay.classList.contains('hidden'), false);
     assert.equal(ui.calls.some(call => call.name === 'load_dashboard'), false);
+});
+
+test('diagnostics keep an unknown reading distinct from its last valid value and HA acknowledgement', async () => {
+    const ui = screen({
+        sensors: [
+            { id: 'cpu_temperature', name: 'CPU Temperature', enabled: true, updates_at_interval: true },
+            { id: 'sensor:cpu_temperature', name: 'CPU Temperature', enabled: true,
+                updates_at_interval: true, group_id: 'cpu_temperature' },
+        ],
+        diagnostics: {
+            cpu_temperature: { current_value: null, last_value: '52', unit: '°C',
+                source: null, last_successful_read_at: 1000, last_ha_ack_at: 2000,
+                last_read_at: 3000, reason: 'provider_timeout' },
+        },
+    });
+    await ui.context.openSettings();
+    await ui.context.refreshSensorDiagnostics();
+    const details = ui.document.getElementById('sensor-list').children[0].children[3];
+    const lines = details.children[1].children;
+    assert.equal(lines[0].children[1].textContent, 'diagnostic_unknown');
+    assert.equal(lines[1].children[1].textContent, '52 °C');
+    assert.match(lines.at(-1).children[1].textContent, /diagnostic_reason_provider_timeout/);
+    assert.match(lines.at(-1).children[1].textContent, /diagnostic_sync_pending/);
+    assert.equal(ui.calls.some(call => call.name === 'get_sensor_diagnostics'), true);
 });
 
 test('sensor choice is staged until Save and discarded by Cancel', async () => {
