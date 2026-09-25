@@ -410,7 +410,11 @@ jobs:
           Path('release-notes.md').write_text(
               f'## Windows-installatie\n\n{windows_note}\n\n'
               'De broncommits en SHA-256-controlesommen voor alle downloads staan in '
-              '`release-manifest.json`.\n', encoding='utf-8'
+              '`release-manifest.json`.\n\n'
+              '## Platformstatus\n\n'
+              'Windows is met de gekoppelde Home Assistant-integratie op phill-pc en beast-unit getest. '
+              'macOS en Linux zijn gebouwd en automatisch getest; interactieve installatie en '
+              'sensormetingen op die platformen zijn nog niet gevalideerd.\n', encoding='utf-8'
           )
           PY
       - name: Create Release
@@ -419,6 +423,7 @@ jobs:
           tag_name: ${{ needs.version.outputs.version }}
           target_commitish: ${{ github.sha }}
           body_path: release-notes.md
+          draft: true
           fail_on_unmatched_files: true
           # Source files (package.json etc.) are the source of truth, so the
           # workflow no longer pushes a "chore: set version" commit back to

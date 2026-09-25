@@ -20,7 +20,7 @@ Een cross-platform desktop companion app voor Home Assistant, inclusief een cust
 ## Installatie
 
 ### Desktop App
-1. Download een **gepubliceerde en geteste** release voor jouw platform van [GitHub Releases](https://github.com/Fill84/HA-Companion-App/releases). De volgende releasekandidaat wordt 1.0.5; hij is nog niet gepubliceerd. Controleer versie en SHA-256 tegen het release-manifest. Een lokaal `target/`-bestand is geen actuele publieke release.
+1. Download een **gepubliceerde en geteste** release voor jouw platform van [GitHub Releases](https://github.com/Fill84/HA-Companion-App/releases). Versie 1.0.5 is pas beschikbaar zodra zij daar als publieke release verschijnt. Controleer versie en SHA-256 tegen het release-manifest. Een lokaal `target/`-bestand is geen actuele publieke release.
    De komende Windows-installer is naar verwachting ongetekend. Windows kan `Onbekende uitgever` of een SmartScreen-waarschuwing tonen; de meegeleverde driver heeft wel een eigen leveranciershandtekening. Controleer de exacte release en de SHA-256 voordat je de installer uitvoert.
 2. Installeer de app en start deze
 3. Vul je Home Assistant server URL en Long-Lived Access Token in bij de eerste setup
@@ -39,7 +39,7 @@ Het toegangstoken wordt in de Windows Credential Manager, macOS Keychain of een 
 
 - voor meer informatie over de integratie bezoek: https://github.com/Fill84/ha-integration
 
-Lees de [volledige installatie-, upgrade-, dashboard- en herstelgids](https://github.com/Fill84/ha-integration/blob/main/docs/INSTALLATION.md) voordat je een bestaande installatie bijwerkt. Eerst de HA-integratie bijwerken en HA volledig herstarten, daarna de bijbehorende desktopversie installeren. HACS leest de afzonderlijke `ha-integration`-repository; een desktoprelease alleen levert geen HACS-update. De lokale integratieversie 1.0.11 is nog geen gepubliceerde HACS-release. Bestaande entity-ID's en automatiseringen moeten bij de upgrade behouden blijven.
+Lees de [volledige installatie-, upgrade-, dashboard- en herstelgids](https://github.com/Fill84/ha-integration/blob/main/docs/INSTALLATION.md) voordat je een bestaande installatie bijwerkt. Eerst de HA-integratie bijwerken en HA volledig herstarten, daarna de bijbehorende desktopversie installeren. HACS leest de afzonderlijke `ha-integration`-repository; een desktoprelease alleen levert geen HACS-update. Integratieversie 1.0.11 is gepubliceerd en via HACS op de live HA-installatie getest; daarbij bleven de bestaande entity-ID's behouden.
 
 ## Bouw en releasecontrole
 De Windows-releaseworkflow controleert dat appbinary en NSIS-installer allebei geldig ondertekend of allebei ongetekend zijn. De gebruiker heeft distributie zonder publiek vertrouwde handtekening met zichtbare Windows-waarschuwing toegestaan. De status staat in het release-manifest en de releasenotities; zie [Windows-codeondertekening en releasebeleid](docs/RELEASE_SIGNING.md). Andere openstaande acceptatieproeven blijven voorwaarden voor publicatie.
