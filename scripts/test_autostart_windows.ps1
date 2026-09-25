@@ -1,8 +1,15 @@
+param(
+    [ValidateRange(1, 100)]
+    [int]$ExpectedSessionId = 1,
+    [ValidatePattern('^[a-zA-Z0-9._-]+\.json$')]
+    [string]$BackupFileName = 'settings-before-autostart-test.json'
+)
+
 $ErrorActionPreference = 'Stop'
 
 $folder = Join-Path $env:APPDATA 'com.ha-companion.desktop'
 $settings = Join-Path $folder 'settings.json'
-$backup = Join-Path $folder 'settings-before-autostart-test.json'
+$backup = Join-Path $folder $BackupFileName
 $application = 'C:\Program Files\Home Assistant Companion\ha-companion.exe'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runName = 'Home Assistant Companion'
@@ -28,7 +35,7 @@ function Start-InteractiveApp([string]$taskName) {
         Start-ScheduledTask -TaskName $taskName
         Start-Sleep -Seconds 8
         $process = Get-Process ha-companion -ErrorAction Stop | Select-Object -First 1
-        if ($process.SessionId -ne 1) { throw 'App did not start in the interactive session.' }
+        if ($process.SessionId -ne $ExpectedSessionId) { throw 'App did not start in the interactive session.' }
     } finally {
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
     }
