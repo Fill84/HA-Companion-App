@@ -35,7 +35,7 @@ Het toegangstoken wordt in de Windows Credential Manager, macOS Keychain of een 
    - (De integratie staat in `custom_components/desktop_app` in de repo-root zodat HACS hem vindt.)
 2. Zoek "Desktop App" en installeer de integratie
 3. Herstart Home Assistant
-4. Configureer de integratie via Instellingen → Integraties
+4. Open de desktopapp en verbind deze met Home Assistant. Vanaf integratie 1.0.12 en desktopapp 1.0.6 maakt de app zelf zijn apparaat aan; een lege hub of handmatige toevoegactie is niet nodig. De eerste registratie vraagt een HA-beheerderstoken.
 
 - voor meer informatie over de integratie bezoek: https://github.com/Fill84/ha-integration
 
@@ -71,7 +71,7 @@ HA-Companion-App/
 
 ## CPU-temperatuur en hostbelasting
 
-De app bevat geen WinRing0-driver. Op Windows installeert onze NSIS-installer standaard de meegeleverde, Microsoft-ondertekende PawnIO-driver en onze eigen Rust-sensorservice; de gewone app vraagt alleen een beperkte lokale momentopname aan. Er is geen .NET-helper of aparte sensorapp. Zonder ondersteunde meting blijft CPU-temperatuur `unknown`. De actuele lokale 1.0.5-installer is op `phill-pc` en `beast-unit` als upgrade beproefd en leverde op beide hosts verse CPU-metingen via de bestaande HA-entities. Langdurige storing-, clean-install- en platformproeven blijven releasevoorwaarden.
+De app bevat geen WinRing0-driver. Op Windows installeert onze NSIS-installer standaard de meegeleverde, Microsoft-ondertekende PawnIO-driver en onze eigen Rust-sensorservice; de gewone app vraagt alleen een beperkte lokale momentopname aan. Er is geen .NET-helper of aparte sensorapp. Zonder ondersteunde meting blijft CPU-temperatuur `unknown`. De lokale 1.0.6-installer is op `phill-pc` en `beast-unit` als upgrade beproefd en leverde op beide hosts verse CPU-metingen via de bestaande HA-entities. Langdurige storing-, clean-install- en platformproeven blijven releasevoorwaarden.
 
 De collector levert één snapshot per meetronde en hergebruikt de basis-systeemmetingen. Zie de [geïntegreerde sensorspecificatie](docs/specs/2026-09-24-integrated-sensors.md), het [uitvoeringsplan](docs/plans/2026-09-24-integrated-sensors.md) en de [sensor-supportmatrix](docs/specs/2026-09-24-sensor-support.md). Bestaande WinRing0-services worden niet automatisch verwijderd; een upgrade van een oude installatie vraagt nog migratievalidatie.
 

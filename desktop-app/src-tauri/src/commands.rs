@@ -616,9 +616,9 @@ pub async fn check_connection(
 
     let ha_client = state.ha_client.lock().await;
 
-    if let Err(e) = ha_client.check_integration_reachable().await {
+    if let Err(error) = ha_client.registration_api_available().await {
         return Ok(ConnectionStatus::Unreachable {
-            reason: e.to_string(),
+            reason: error.to_string(),
         });
     }
 

@@ -34,34 +34,32 @@ pub async fn register_device(
         app_version: Some(env!("CARGO_PKG_VERSION").to_string()),
     };
 
-    // Check that the integration is reachable first (clearer 404 message)
-    if let Err(e) = ha_client.check_integration_reachable().await {
-        let msg = format!("Cannot reach Home Assistant Desktop App API. {}", e);
-        log::error!("[HA] {}", msg);
-        return Err(msg);
-    }
-
-    // Register device
-    let response = ha_client
-        .register_device(&registration)
+    let webhook_id = if ha_client
+        .registration_api_available()
         .await
-        .map_err(|e| format!("Registration failed: {}", e))?;
-
-    if !response.success {
-        let err = format!(
-            "Registration rejected: {}",
-            response
-                .error
-                .unwrap_or_else(|| "Unknown error".to_string())
-        );
-        log::error!("[HA] {}", err);
-        return Err(err);
-    }
-
-    let webhook_id = response.webhook_id.ok_or_else(|| {
-        log::error!("[HA] Registration response missing webhook_id");
-        "No webhook_id in response".to_string()
-    })?;
+        .map_err(|error| format!("Cannot reach Home Assistant: {error}"))?
+    {
+        let response = ha_client
+            .register_device(&registration)
+            .await
+            .map_err(|error| format!("Registration failed: {error}"))?;
+        if !response.success {
+            return Err(format!(
+                "Registration rejected: {}",
+                response
+                    .error
+                    .unwrap_or_else(|| "Unknown error".to_string())
+            ));
+        }
+        response
+            .webhook_id
+            .ok_or("Registration response missing webhook_id")?
+    } else {
+        ha_client
+            .bootstrap_device(&registration)
+            .await
+            .map_err(|error| format!("Registration failed: {error}"))?
+    };
 
     // The webhook may exist in HA before all sensors are accepted. Keep it
     // transient until the first complete update succeeds.

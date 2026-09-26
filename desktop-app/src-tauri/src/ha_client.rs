@@ -222,6 +222,18 @@ impl HaClient {
     pub async fn check_integration_reachable(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.registration_api_available().await? {
+            Ok(())
+        } else {
+            Err("Desktop App compatibility API is not loaded yet".into())
+        }
+    }
+
+    /// The compatibility API is absent when the first desktop activates the
+    /// integration after HA's HTTP router has frozen.
+    pub async fn registration_api_available(
+        &self,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         let url = format!("{}/api/desktop_app/ping", self.base_url());
         log::info!("[HA] Checking integration ping endpoint");
         let response = self
@@ -233,18 +245,107 @@ impl HaClient {
         let status = response.status();
         log::info!("[HA] ping response: {}", status);
         if status.as_u16() == 404 {
-            let msg = "404: Desktop App integration not loaded or URL not reachable. \
-                Install the integration in HA, restart HA, and ensure the server URL is correct (base URL without /api). \
-                If using a reverse proxy, ensure /api/ is forwarded to Home Assistant.";
-            log::error!("[HA] Ping failed: {}", msg);
-            return Err(msg.into());
+            return Ok(false);
         }
         if !response.status().is_success() {
             let err = format!("Integration ping returned {}", response.status());
             log::error!("[HA] {}", err);
             return Err(err.into());
         }
-        Ok(())
+        Ok(true)
+    }
+
+    /// Create the first device through Home Assistant's administrator-only
+    /// config-flow API. This does not require our custom HTTP routes to be
+    /// registered before the first device exists.
+    pub async fn bootstrap_device(
+        &self,
+        registration: &RegistrationRequest,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let flow_url = format!("{}/api/config/config_entries/flow", self.base_url());
+        let response = self
+            .client
+            .post(&flow_url)
+            .bearer_auth(&self.access_token)
+            .json(&serde_json::json!({"handler": "desktop_app"}))
+            .send()
+            .await
+            .map_err(Self::webhook_transport_error)?;
+        let status = response.status();
+        if status == reqwest::StatusCode::FORBIDDEN {
+            return Err(
+                "The first desktop registration requires a Home Assistant administrator token"
+                    .into(),
+            );
+        }
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("Invalid Home Assistant access token".into());
+        }
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err("Desktop App integration is not installed or Home Assistant has not been restarted after installation".into());
+        }
+        if !status.is_success() {
+            return Err(
+                format!("Could not start Home Assistant registration flow: HTTP {status}").into(),
+            );
+        }
+        let flow: serde_json::Value = response.json().await?;
+        if flow.get("type").and_then(serde_json::Value::as_str) != Some("form") {
+            return Err("Home Assistant did not open the Desktop App registration flow".into());
+        }
+        let flow_id = flow
+            .get("flow_id")
+            .and_then(serde_json::Value::as_str)
+            .filter(|id| !id.is_empty() && id.len() <= 128)
+            .ok_or("Home Assistant registration flow has no valid ID")?;
+        let webhook_id = format!(
+            "{}{}",
+            uuid::Uuid::new_v4().simple(),
+            uuid::Uuid::new_v4().simple()
+        );
+        let mut data = serde_json::to_value(registration)?;
+        data["webhook_id"] = serde_json::Value::String(webhook_id.clone());
+        let response = self
+            .client
+            .post(format!("{flow_url}/{flow_id}"))
+            .bearer_auth(&self.access_token)
+            .json(&data)
+            .send()
+            .await
+            .map_err(Self::webhook_transport_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(
+                format!("Home Assistant rejected desktop registration: HTTP {status}").into(),
+            );
+        }
+        let result: serde_json::Value = response.json().await?;
+        if result.get("type").and_then(serde_json::Value::as_str) == Some("abort")
+            && result.get("reason").and_then(serde_json::Value::as_str)
+                == Some("already_registered")
+        {
+            let existing = result
+                .pointer("/description_placeholders/webhook_id")
+                .and_then(serde_json::Value::as_str)
+                .filter(|id| id.len() == 64 && id.bytes().all(|byte| byte.is_ascii_hexdigit()))
+                .ok_or("Home Assistant did not return a valid existing webhook")?;
+            return Ok(existing.to_owned());
+        }
+        if result.get("type").and_then(serde_json::Value::as_str) != Some("create_entry") {
+            let reason = result
+                .get("reason")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unexpected flow result");
+            return Err(format!("Home Assistant did not register the desktop: {reason}").into());
+        }
+        if result
+            .pointer("/result/domain")
+            .and_then(serde_json::Value::as_str)
+            != Some("desktop_app")
+        {
+            return Err("Home Assistant returned an unexpected integration entry".into());
+        }
+        Ok(webhook_id)
     }
 
     /// Check the saved token without changing device registration or its webhook.
@@ -497,6 +598,82 @@ mod tests {
     use std::collections::HashMap;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+
+    async fn read_request(socket: &mut tokio::net::TcpStream) -> String {
+        let mut request = Vec::new();
+        loop {
+            let mut chunk = [0_u8; 4096];
+            let length = socket.read(&mut chunk).await.unwrap();
+            assert!(length > 0);
+            request.extend_from_slice(&chunk[..length]);
+            if let Some(headers_end) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&request[..headers_end]);
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length: ")
+                            .and_then(|value| value.parse::<usize>().ok())
+                    })
+                    .unwrap_or(0);
+                if request.len() >= headers_end + 4 + content_length {
+                    return String::from_utf8(request).unwrap();
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn first_device_uses_ha_flow_and_can_recover_existing_webhook() {
+        for (flow_result, expected_webhook) in [
+            (
+                serde_json::json!({"type":"create_entry","result":{"domain":"desktop_app"}}),
+                None,
+            ),
+            (
+                serde_json::json!({"type":"abort","reason":"already_registered","description_placeholders":{"webhook_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}),
+                Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            ),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let request = read_request(&mut socket).await;
+                assert!(request.starts_with("POST /api/config/config_entries/flow HTTP/1.1"));
+                assert!(request.contains("authorization: Bearer test-token"));
+                assert!(request.contains("\"handler\":\"desktop_app\""));
+                let response = r#"{"type":"form","flow_id":"flow-1"}"#;
+                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}", response.len()).as_bytes()).await.unwrap();
+
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let request = read_request(&mut socket).await;
+                assert!(request.starts_with("POST /api/config/config_entries/flow/flow-1 HTTP/1.1"));
+                let payload: serde_json::Value =
+                    serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+                assert_eq!(payload["device_id"], "device-1");
+                assert_eq!(payload["webhook_id"].as_str().unwrap().len(), 64);
+                let response = flow_result.to_string();
+                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}", response.len()).as_bytes()).await.unwrap();
+            });
+            let client = HaClient::new(format!("http://{address}"), "test-token".into(), None);
+            let registration = RegistrationRequest {
+                device_id: "device-1".into(),
+                device_name: "Test PC".into(),
+                manufacturer: None,
+                model: None,
+                os_name: None,
+                os_version: None,
+                app_version: None,
+            };
+            let webhook = client.bootstrap_device(&registration).await.unwrap();
+            assert_eq!(webhook.len(), 64);
+            if let Some(expected) = expected_webhook {
+                assert_eq!(webhook, expected);
+            }
+            server.await.unwrap();
+        }
+    }
 
     #[tokio::test]
     async fn token_check_uses_core_api_for_integration_upgrade_compatibility() {
