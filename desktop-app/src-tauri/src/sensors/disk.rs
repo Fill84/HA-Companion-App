@@ -207,7 +207,7 @@ impl DiskCollector {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 fn collect() -> DiskData {
     DiskCollector::default().collect(true)
 }

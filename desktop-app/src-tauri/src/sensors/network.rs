@@ -148,7 +148,7 @@ impl NetworkCollector {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 fn collect() -> NetworkData {
     NetworkCollector::default().collect(true)
 }
