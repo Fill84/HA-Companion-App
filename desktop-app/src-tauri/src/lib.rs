@@ -384,6 +384,28 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
     // Wait a bit for app to initialize
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
+    // Discover all available readings once, even when a sensor group is
+    // disabled or the device has not been registered with HA yet.
+    let discovery_state = state.clone();
+    let discovery = tokio::task::spawn_blocking(move || {
+        let mut collector = discovery_state.collector.blocking_lock();
+        let choices = collector.get_sensor_list();
+        (choices.len(), collector.identity_map())
+    })
+    .await;
+    match discovery {
+        Ok((count, identities)) => {
+            log::info!("Discovered {count} sensor choices at startup");
+            let mut settings = state.settings.lock().await;
+            if settings.sensor_identity_map != identities {
+                if let Err(error) = settings.save_identity_map(&state.app_handle, identities) {
+                    log::warn!("Could not persist discovered sensor identities: {error}");
+                }
+            }
+        }
+        Err(error) => log::error!("Startup sensor discovery failed: {error}"),
+    }
+
     if state.settings.lock().await.webhook_id.is_some() {
         refresh_device_metadata(&state).await;
     }

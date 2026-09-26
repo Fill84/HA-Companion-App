@@ -17,49 +17,74 @@ pub struct GpuInfo {
     pub driver_version: Option<String>,
 }
 
-pub fn collect() -> GpuData {
-    let mut gpus = Vec::new();
-
-    // Try NVIDIA via NVML
-    if let Some(nvidia_gpus) = collect_nvidia() {
-        gpus.extend(nvidia_gpus);
-    }
-
-    // Try WMI on Windows for AMD/Intel
+#[derive(Default)]
+pub struct GpuCollector {
     #[cfg(windows)]
-    {
-        if let Some(wmi_gpus) = collect_wmi() {
-            // Only add WMI GPUs that weren't already found via NVML
-            for wmi_gpu in wmi_gpus {
-                let already_found = gpus.iter().any(|g: &GpuInfo| {
-                    g.name.to_lowercase().contains(&wmi_gpu.name.to_lowercase())
-                });
-                if !already_found {
-                    gpus.push(wmi_gpu);
+    wmi_gpus: Option<Vec<GpuInfo>>,
+    #[cfg(target_os = "macos")]
+    mac_gpus: Option<Vec<GpuInfo>>,
+}
+
+impl GpuCollector {
+    pub fn collect(&mut self) -> GpuData {
+        let mut gpus = Vec::new();
+
+        // NVML supplies live values. WMI and system_profiler supply static
+        // metadata and are queried once per discovered hardware inventory.
+        if let Some(nvidia_gpus) = collect_nvidia() {
+            gpus.extend(nvidia_gpus);
+        }
+
+        #[cfg(windows)]
+        {
+            if self.wmi_gpus.is_none() {
+                self.wmi_gpus = collect_wmi();
+            }
+            if let Some(wmi_gpus) = &self.wmi_gpus {
+                // Only add WMI GPUs that weren't already found via NVML
+                for wmi_gpu in wmi_gpus {
+                    let already_found = gpus.iter().any(|g: &GpuInfo| {
+                        g.name.to_lowercase().contains(&wmi_gpu.name.to_lowercase())
+                    });
+                    if !already_found {
+                        gpus.push(wmi_gpu.clone());
+                    }
                 }
             }
         }
-    }
 
-    // Linux DRM/sysfs exposes PCI identity and, where supported, AMD telemetry.
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(linux_gpus) = collect_linux(gpus.iter().any(|gpu| gpu.vendor == "NVIDIA")) {
-            gpus.extend(linux_gpus);
-        }
-    }
-
-    // macOS: system_profiler
-    #[cfg(target_os = "macos")]
-    {
-        if gpus.is_empty() {
-            if let Some(mac_gpus) = collect_macos() {
-                gpus.extend(mac_gpus);
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(linux_gpus) = collect_linux(gpus.iter().any(|gpu| gpu.vendor == "NVIDIA")) {
+                gpus.extend(linux_gpus);
             }
         }
+
+        #[cfg(target_os = "macos")]
+        {
+            if gpus.is_empty() {
+                if self.mac_gpus.is_none() {
+                    self.mac_gpus = collect_macos();
+                }
+                if let Some(mac_gpus) = &self.mac_gpus {
+                    gpus.extend(mac_gpus.iter().cloned());
+                }
+            }
+        }
+
+        GpuData { gpus }
     }
 
-    GpuData { gpus }
+    pub fn invalidate_inventory(&mut self) {
+        #[cfg(windows)]
+        {
+            self.wmi_gpus = None;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            self.mac_gpus = None;
+        }
+    }
 }
 
 fn collect_nvidia() -> Option<Vec<GpuInfo>> {

@@ -144,41 +144,72 @@ fn volume_identity(_mount_point: &std::path::Path, _name: &std::ffi::OsStr) -> O
     None
 }
 
-pub fn collect() -> DiskData {
-    let disks = Disks::new_with_refreshed_list();
-    let partitions: Vec<PartitionData> = disks
-        .iter()
-        .map(|disk| {
-            let total = disk.total_space();
-            let available = disk.available_space();
-            let used = total.saturating_sub(available);
-            let usage_percent = if total > 0 {
-                (used as f32 / total as f32) * 100.0
-            } else {
-                0.0
-            };
+pub struct DiskCollector {
+    disks: Disks,
+    discovered: bool,
+}
 
-            let disk_type = match disk.kind() {
-                sysinfo::DiskKind::SSD => "SSD".to_string(),
-                sysinfo::DiskKind::HDD => "HDD".to_string(),
-                _ => "Unknown".to_string(),
-            };
+impl Default for DiskCollector {
+    fn default() -> Self {
+        Self {
+            disks: Disks::new(),
+            discovered: false,
+        }
+    }
+}
 
-            PartitionData {
-                name: disk.name().to_string_lossy().to_string(),
-                mount_point: disk.mount_point().to_string_lossy().to_string(),
-                physical_id: volume_identity(disk.mount_point(), disk.name()),
-                total_bytes: total,
-                used_bytes: used,
-                available_bytes: available,
-                usage_percent,
-                filesystem: disk.file_system().to_string_lossy().to_string(),
-                disk_type,
-            }
-        })
-        .collect();
+impl DiskCollector {
+    pub fn collect(&mut self, refresh_topology: bool) -> DiskData {
+        if refresh_topology || !self.discovered {
+            self.disks.refresh_list();
+            self.discovered = true;
+        } else {
+            self.disks.refresh();
+        }
+        self.snapshot()
+    }
 
-    DiskData { partitions }
+    fn snapshot(&self) -> DiskData {
+        let partitions: Vec<PartitionData> = self
+            .disks
+            .iter()
+            .map(|disk| {
+                let total = disk.total_space();
+                let available = disk.available_space();
+                let used = total.saturating_sub(available);
+                let usage_percent = if total > 0 {
+                    (used as f32 / total as f32) * 100.0
+                } else {
+                    0.0
+                };
+
+                let disk_type = match disk.kind() {
+                    sysinfo::DiskKind::SSD => "SSD".to_string(),
+                    sysinfo::DiskKind::HDD => "HDD".to_string(),
+                    _ => "Unknown".to_string(),
+                };
+
+                PartitionData {
+                    name: disk.name().to_string_lossy().to_string(),
+                    mount_point: disk.mount_point().to_string_lossy().to_string(),
+                    physical_id: volume_identity(disk.mount_point(), disk.name()),
+                    total_bytes: total,
+                    used_bytes: used,
+                    available_bytes: available,
+                    usage_percent,
+                    filesystem: disk.file_system().to_string_lossy().to_string(),
+                    disk_type,
+                }
+            })
+            .collect();
+
+        DiskData { partitions }
+    }
+}
+
+#[cfg(test)]
+fn collect() -> DiskData {
+    DiskCollector::default().collect(true)
 }
 
 #[cfg(all(test, windows))]

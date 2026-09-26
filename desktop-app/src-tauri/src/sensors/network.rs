@@ -83,36 +83,74 @@ fn windows_adapter_ids() -> HashMap<String, Option<String>> {
     result
 }
 
-pub fn collect() -> NetworkData {
-    let networks = Networks::new_with_refreshed_list();
+pub struct NetworkCollector {
+    networks: Networks,
+    discovered: bool,
     #[cfg(windows)]
-    let adapter_ids = windows_adapter_ids();
-    let interfaces: Vec<NetworkInterface> = networks
-        .iter()
-        .map(|(name, data)| {
-            let mac_address = data.mac_address().to_string();
-            NetworkInterface {
-                name: name.clone(),
-                #[cfg(windows)]
-                physical_id: adapter_ids
-                    .get(&name.to_lowercase())
-                    .cloned()
-                    .unwrap_or_else(|| mac_identity(&mac_address)),
-                #[cfg(not(windows))]
-                physical_id: mac_identity(&mac_address),
-                mac_address,
-                received_bytes: data.total_received(),
-                transmitted_bytes: data.total_transmitted(),
-                ip_addresses: data
-                    .ip_networks()
-                    .iter()
-                    .map(|ip| ip.addr.to_string())
-                    .collect(),
-            }
-        })
-        .collect();
+    adapter_ids: HashMap<String, Option<String>>,
+}
 
-    NetworkData { interfaces }
+impl Default for NetworkCollector {
+    fn default() -> Self {
+        Self {
+            networks: Networks::new(),
+            discovered: false,
+            #[cfg(windows)]
+            adapter_ids: HashMap::new(),
+        }
+    }
+}
+
+impl NetworkCollector {
+    pub fn collect(&mut self, refresh_topology: bool) -> NetworkData {
+        if refresh_topology || !self.discovered {
+            self.networks.refresh_list();
+            #[cfg(windows)]
+            {
+                self.adapter_ids = windows_adapter_ids();
+            }
+            self.discovered = true;
+        } else {
+            self.networks.refresh();
+        }
+        self.snapshot()
+    }
+
+    fn snapshot(&self) -> NetworkData {
+        let interfaces: Vec<NetworkInterface> = self
+            .networks
+            .iter()
+            .map(|(name, data)| {
+                let mac_address = data.mac_address().to_string();
+                NetworkInterface {
+                    name: name.clone(),
+                    #[cfg(windows)]
+                    physical_id: self
+                        .adapter_ids
+                        .get(&name.to_lowercase())
+                        .cloned()
+                        .unwrap_or_else(|| mac_identity(&mac_address)),
+                    #[cfg(not(windows))]
+                    physical_id: mac_identity(&mac_address),
+                    mac_address,
+                    received_bytes: data.total_received(),
+                    transmitted_bytes: data.total_transmitted(),
+                    ip_addresses: data
+                        .ip_networks()
+                        .iter()
+                        .map(|ip| ip.addr.to_string())
+                        .collect(),
+                }
+            })
+            .collect();
+
+        NetworkData { interfaces }
+    }
+}
+
+#[cfg(test)]
+fn collect() -> NetworkData {
+    NetworkCollector::default().collect(true)
 }
 
 #[cfg(test)]

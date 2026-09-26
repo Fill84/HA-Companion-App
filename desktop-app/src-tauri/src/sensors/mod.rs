@@ -5,6 +5,8 @@ pub mod cpu;
 pub mod diagnostics;
 pub mod disk;
 pub mod gpu;
+#[cfg(any(target_os = "linux", test))]
+pub mod hwmon;
 pub mod memory;
 pub mod network;
 pub mod system_info;

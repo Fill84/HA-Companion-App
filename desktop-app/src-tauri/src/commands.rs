@@ -338,6 +338,25 @@ mod settings_contract_tests {
         assert_eq!(result[1].id, "sensor:gpu_temperature");
         assert_eq!(result[1].group_id.as_deref(), Some("gpu"));
         assert!(!result[1].enabled);
+
+        let hardware = HashMap::from([(
+            "hardware_1234".into(),
+            ReadingDiagnostic {
+                name: "Board Fan".into(),
+                current_value: None,
+                last_value: Some("1200".into()),
+                unit: Some("rpm".into()),
+                source: Some("linux/hwmon".into()),
+                last_read_at: 1,
+                last_successful_read_at: Some(1),
+                last_ha_ack_at: None,
+                reason: Some("not_emitted".into()),
+                updates_at_interval: true,
+            },
+        )]);
+        let result = merge_known_readings(Vec::new(), &HashMap::new(), hardware);
+        assert_eq!(result[0].id, "hardware");
+        assert_eq!(result[1].group_id.as_deref(), Some("hardware"));
     }
 }
 
@@ -415,6 +434,21 @@ fn merge_known_readings(
         let choice_id = format!("sensor:{id}");
         if choices.iter().any(|choice| choice.id == choice_id) {
             continue;
+        }
+        if !choices.iter().any(|choice| choice.id == group) {
+            if let Some(catalog_choice) = crate::sensors::catalog::SENSOR_CHOICES
+                .iter()
+                .find(|choice| choice.id == group)
+            {
+                choices.push(SensorListItem {
+                    id: group.to_owned(),
+                    name: catalog_choice.name_en.to_owned(),
+                    name_nl: catalog_choice.name_nl.to_owned(),
+                    enabled: *preferences.get(group).unwrap_or(&true),
+                    updates_at_interval: catalog_choice.updates_at_interval,
+                    group_id: None,
+                });
+            }
         }
         let insert_at = choices
             .iter()

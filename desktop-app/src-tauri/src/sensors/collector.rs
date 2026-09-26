@@ -4,6 +4,8 @@ use chrono::{SecondsFormat, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
+#[cfg(target_os = "linux")]
+use super::hwmon;
 use super::temperature::TemperatureReader;
 use super::{battery, catalog, cpu, disk, gpu, memory, network, system_info};
 
@@ -241,6 +243,14 @@ pub struct SensorCollector {
     identity_map: HashMap<String, String>,
     legacy_gpu_aliases: HashMap<String, Vec<String>>,
     temperature: TemperatureReader,
+    gpu: gpu::GpuCollector,
+    disks: disk::DiskCollector,
+    networks: network::NetworkCollector,
+    #[cfg(target_os = "linux")]
+    hwmon: hwmon::HwmonCollector,
+    refresh_topology: bool,
+    discovered_readings: Option<Vec<SensorValue>>,
+    observed_dynamic_ids: Option<HashSet<String>>,
 }
 
 impl SensorCollector {
@@ -261,6 +271,14 @@ impl SensorCollector {
             identity_map: identity_map.clone(),
             legacy_gpu_aliases: legacy_gpu_aliases.clone(),
             temperature: TemperatureReader::new(),
+            gpu: gpu::GpuCollector::default(),
+            disks: disk::DiskCollector::default(),
+            networks: network::NetworkCollector::default(),
+            #[cfg(target_os = "linux")]
+            hwmon: hwmon::HwmonCollector::default(),
+            refresh_topology: false,
+            discovered_readings: None,
+            observed_dynamic_ids: None,
         }
     }
 
@@ -278,10 +296,16 @@ impl SensorCollector {
 
     /// Collect all sensors (both static and dynamic) — used at startup
     pub fn collect_all(&mut self) -> Vec<SensorValue> {
+        self.refresh_topology = true;
+        self.gpu.invalidate_inventory();
+        if self.observed_dynamic_ids.is_some() {
+            self.discovered_readings = None;
+        }
         let mut sensors = Vec::new();
 
         sensors.extend(self.collect_static());
         sensors.extend(self.collect_dynamic());
+        self.refresh_topology = false;
 
         self.retain_enabled_readings(&mut sensors);
         sensors
@@ -444,7 +468,7 @@ impl SensorCollector {
 
         // Disk sensors (dynamic)
         if self.is_enabled("disk_usage") {
-            let disk_data = disk::collect();
+            let disk_data = self.disks.collect(self.refresh_topology);
             let identities: Vec<_> = disk_data
                 .partitions
                 .iter()
@@ -471,7 +495,7 @@ impl SensorCollector {
 
         // GPU sensors (dynamic)
         if self.is_enabled("gpu") {
-            let gpu_data = gpu::collect();
+            let gpu_data = self.gpu.collect();
             let identities: Vec<_> = gpu_data
                 .gpus
                 .iter()
@@ -561,7 +585,7 @@ impl SensorCollector {
 
         // Network sensors (dynamic)
         if self.is_enabled("network") {
-            let net_data = network::collect();
+            let net_data = self.networks.collect(self.refresh_topology);
             let identities: Vec<_> = net_data
                 .interfaces
                 .iter()
@@ -672,6 +696,45 @@ impl SensorCollector {
             }
         }
 
+        #[cfg(target_os = "linux")]
+        if self.is_enabled("hardware") {
+            for reading in self.hwmon.collect(self.refresh_topology) {
+                let device_class = match reading.kind {
+                    hwmon::ChannelKind::Temperature => Some("temperature"),
+                    hwmon::ChannelKind::Voltage => Some("voltage"),
+                    hwmon::ChannelKind::Current => Some("current"),
+                    hwmon::ChannelKind::Power => Some("power"),
+                    hwmon::ChannelKind::Fan => None,
+                };
+                let icon = match reading.kind {
+                    hwmon::ChannelKind::Temperature => "mdi:thermometer",
+                    hwmon::ChannelKind::Fan => "mdi:fan",
+                    hwmon::ChannelKind::Voltage => "mdi:flash",
+                    hwmon::ChannelKind::Current => "mdi:current-ac",
+                    hwmon::ChannelKind::Power => "mdi:gauge",
+                };
+                sensors.push(SensorValue {
+                    unique_id: reading.unique_id,
+                    name: reading.name,
+                    state: serde_json::json!(reading.value),
+                    sensor_type: "sensor".into(),
+                    device_class: device_class.map(str::to_owned),
+                    unit_of_measurement: Some(reading.kind.unit().into()),
+                    state_class: Some("measurement".into()),
+                    icon: Some(icon.into()),
+                    attributes: HashMap::from([
+                        (
+                            "measurement_source".into(),
+                            serde_json::json!("linux/hwmon"),
+                        ),
+                        ("chip".into(), serde_json::json!(reading.chip)),
+                        ("channel".into(), serde_json::json!(reading.channel)),
+                    ]),
+                    update_at_interval: true,
+                });
+            }
+        }
+
         // System uptime & process count (dynamic)
         if self.is_enabled("system_uptime") || self.is_enabled("process_count") {
             let dyn_info = system_info::collect_dynamic(&self.sys);
@@ -697,6 +760,19 @@ impl SensorCollector {
         }
 
         self.retain_enabled_readings(&mut sensors);
+        let current_ids: HashSet<_> = sensors
+            .iter()
+            .map(|sensor| sensor.unique_id.clone())
+            .collect();
+        if self
+            .observed_dynamic_ids
+            .as_ref()
+            .is_some_and(|previous| previous != &current_ids)
+        {
+            self.discovered_readings = None;
+            self.gpu.invalidate_inventory();
+        }
+        self.observed_dynamic_ids = Some(current_ids);
         sensors
     }
 
@@ -922,7 +998,7 @@ impl SensorCollector {
 
         // GPU model (static)
         if self.is_enabled("gpu") {
-            let gpu_data = gpu::collect();
+            let gpu_data = self.gpu.collect();
             let identities: Vec<_> = gpu_data
                 .gpus
                 .iter()
@@ -996,18 +1072,29 @@ impl SensorCollector {
 
     /// Get list of all possible sensors and their enabled status
     pub fn get_sensor_list(&mut self) -> Vec<SensorListItem> {
-        // Probe with every group enabled so disabled groups remain discoverable.
-        // Keep live preferences and provider state untouched during discovery.
-        let mut probe = Self::new(
-            &HashMap::new(),
-            &self.identity_map,
-            &self.legacy_gpu_aliases,
-        );
-        let readings = probe.collect_all();
-        self.identity_map = probe.identity_map;
+        // Probe every group once, including disabled groups. Settings reuses the
+        // inventory instead of opening every hardware provider on each visit.
+        if self.discovered_readings.is_none() {
+            let mut probe = Self::new(
+                &HashMap::new(),
+                &self.identity_map,
+                &self.legacy_gpu_aliases,
+            );
+            let readings = probe.collect_all();
+            self.identity_map = probe.identity_map;
+            self.discovered_readings = Some(readings);
+        }
+        let readings = self.discovered_readings.as_ref().expect("discovered above");
         let mut seen = HashSet::new();
         let mut list = Vec::new();
         for choice in catalog::SENSOR_CHOICES {
+            if choice.id == "hardware"
+                && !readings
+                    .iter()
+                    .any(|reading| sensor_group(&reading.unique_id) == Some("hardware"))
+            {
+                continue;
+            }
             list.push(SensorListItem {
                 id: choice.id.to_string(),
                 name: choice.name_en.to_string(),
@@ -1041,6 +1128,11 @@ impl SensorCollector {
         if enabled.get("cpu_temperature") == Some(&false) {
             self.temperature.suspend();
         }
+        if self.enabled_sensors != enabled {
+            self.discovered_readings = None;
+            self.observed_dynamic_ids = None;
+            self.gpu.invalidate_inventory();
+        }
         self.enabled_sensors = enabled;
     }
 }
@@ -1072,6 +1164,8 @@ pub(crate) fn sensor_group(id: &str) -> Option<&'static str> {
         Some("battery")
     } else if id.starts_with("display_resolution") {
         Some("display")
+    } else if id.starts_with("hardware_") {
+        Some("hardware")
     } else {
         None
     }

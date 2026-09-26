@@ -79,6 +79,12 @@ pub const SENSOR_CHOICES: &[SensorChoice] = &[
         updates_at_interval: true,
     },
     SensorChoice {
+        id: "hardware",
+        name_en: "Hardware Sensors",
+        name_nl: "Hardwaresensoren",
+        updates_at_interval: true,
+    },
+    SensorChoice {
         id: "os_version",
         name_en: "OS Version",
         name_nl: "OS Versie",
