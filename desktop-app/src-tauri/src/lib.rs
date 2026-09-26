@@ -33,6 +33,7 @@ pub struct AppState {
     pub diagnostics: Mutex<SensorDiagnostics>,
     pub registration_lock: Mutex<()>,
     pub shutting_down: AtomicBool,
+    pub hardware_refresh_requested: AtomicBool,
 }
 
 struct TrayItems {
@@ -184,6 +185,7 @@ pub fn run(dev_mode: bool) {
                 diagnostics: Mutex::new(SensorDiagnostics::default()),
                 registration_lock: Mutex::new(()),
                 shutting_down: AtomicBool::new(false),
+                hardware_refresh_requested: AtomicBool::new(false),
             });
 
             app.manage(state.clone());
@@ -360,6 +362,13 @@ pub fn run(dev_mode: bool) {
                 })
                 .join();
             }
+            RunEvent::Resumed => {
+                if let Some(state) = app_handle.try_state::<Arc<AppState>>() {
+                    state
+                        .hardware_refresh_requested
+                        .store(true, Ordering::SeqCst);
+                }
+            }
             _ => {}
         }
     });
@@ -425,11 +434,19 @@ async fn sensor_update_loop(state: Arc<AppState>, handle: tauri::AppHandle) {
         let is_registered = state.settings.lock().await.webhook_id.is_some();
 
         if is_registered {
-            if cycle_count.is_multiple_of(10) {
+            let refresh_requested = state
+                .hardware_refresh_requested
+                .swap(false, Ordering::SeqCst);
+            if refresh_requested || cycle_count.is_multiple_of(10) {
                 let all_sensors = match collect_snapshot(state.clone(), true).await {
                     Ok(sensors) => sensors,
                     Err(error) => {
                         log::error!("{error}");
+                        if refresh_requested {
+                            state
+                                .hardware_refresh_requested
+                                .store(true, Ordering::SeqCst);
+                        }
                         tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
                         continue;
                     }
